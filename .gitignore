@@ -19,3 +19,9 @@ datos/
 node_modules/
 # salidas del banco de pruebas (traen datos reales: no van al repo)
 pruebas/salida/
+
+# el primer admin lleva el mail real: va solo la copia de ejemplo
+supabase/04_primer_admin.sql
+# salidas sueltas del banco de pruebas
+pruebas/*.txt
+pruebas/salida-capturas/

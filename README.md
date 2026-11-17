@@ -13,16 +13,17 @@ En el HTML va solo la URL del proyecto y la clave pública; la clave `service_ro
 | `supabase/01_esquema.sql` | Tablas y parámetros de arranque. |
 | `supabase/02_seguridad.sql` | Roles, RLS en todas las tablas, registro de cambios, reglas de "nada se pisa". |
 | `supabase/03_funciones.sql` | Las funciones que usa la app (confirmar un lote, corregir, auditar, restaurar…). |
-| `supabase/04_primer_admin.sql` | Deja a Iñaki como admin (editar el mail antes de correrlo). |
+| `supabase/04_primer_admin.ejemplo.sql` | Deja a Iñaki como admin. Se copia como `04_primer_admin.sql` (en `.gitignore`) y ahí se pone el mail real. |
 | `supabase/05_vincular_relevamiento.sql` | Vincular después un relevamiento ya cargado con los bolsones de hoy. Se corre solo, sin tocar 01..04. |
+| `supabase/06_auditoria_compartida.sql` | Auditoría compartida (el admin también audita, varias auditorías por lote) y vincular solo el relevamiento más reciente. Se corre solo, sin tocar 01..05. |
 | `.github/workflows/latido.yml` | Llamada diaria para que el plan gratis de Supabase no pause el proyecto. |
 | `pruebas/` | Banco de pruebas local (Postgres en memoria con el mismo SQL) y la prueba de punta a punta. |
 
 ## Poner en marcha (una sola vez)
 
 1. **Base.** En el panel de Supabase → SQL Editor, correr en este orden, cada uno completo:
-   `01_esquema.sql`, `02_seguridad.sql`, `03_funciones.sql`, `05_vincular_relevamiento.sql`.
-   En una base que ya tiene 01..03 corridos, alcanza con correr `05_vincular_relevamiento.sql`.
+   `01_esquema.sql`, `02_seguridad.sql`, `03_funciones.sql`, `05_vincular_relevamiento.sql`, `06_auditoria_compartida.sql`.
+   En una base que ya tiene 01..05 corridos, alcanza con correr `06_auditoria_compartida.sql`.
 2. **Auth — obligatorio.** Authentication → Sign In / Providers → Email:
    - **«Allow new users to sign up» en OFF.** Las cuentas las crea solo el admin desde el panel.
    - **«Confirm email» en ON.** Verificarlo.
@@ -31,7 +32,7 @@ En el HTML va solo la URL del proyecto y la clave pública; la clave `service_ro
 3. **URLs de Auth.** Authentication → URL Configuration:
    Site URL `https://harambeiskappa.github.io/Silo-Bolsa-LIVE/` y la misma en Redirect URLs (para "Me olvidé la contraseña").
 4. **Cuenta de Iñaki.** Authentication → Users → Add user → Create new user (mail y contraseña, con **Auto Confirm User**).
-   Después, en el SQL Editor, `04_primer_admin.sql` con su mail.
+   Después, copiar `04_primer_admin.ejemplo.sql` como `04_primer_admin.sql`, poner su mail y correrlo en el SQL Editor.
 5. **Publicar.** En GitHub: Settings → Pages → Deploy from a branch → `main` / `(root)`.
 6. **Latido.** Pestaña Actions → "Latido diario" → Run workflow, para ver que corre.
 
@@ -58,6 +59,7 @@ Mientras no estén cargados, la app muestra `s/d` con su motivo.
 |---|---|
 | `admin` | todo: cargar, importar, editar, anular, parámetros, usuarios |
 | `auditor` | ver todo, auditar lotes y mediciones, cargar re-mediciones de auditoría |
+| `admin` también audita | su auditoría de un lote que cargó él queda marcada como «control de quien cargó» (la base lo calcula) |
 | `lectura` | ver todo |
 | `sin_acceso` | nada (así nace toda cuenta nueva hasta que el admin le da un rol) |
 

@@ -44,7 +44,7 @@ function verificar(tok) {
 export async function crearBase() {
   const db = new PGlite();
   await db.exec(fs.readFileSync(path.join(AQUI, 'shim_supabase.sql'), 'utf8'));
-  for (const f of ['01_esquema.sql', '02_seguridad.sql', '03_funciones.sql', '05_vincular_relevamiento.sql'])
+  for (const f of ['01_esquema.sql', '02_seguridad.sql', '03_funciones.sql', '05_vincular_relevamiento.sql', '06_auditoria_compartida.sql'])
     await db.exec(fs.readFileSync(path.join(RAIZ, 'supabase', f), 'utf8'));
   return db;
 }

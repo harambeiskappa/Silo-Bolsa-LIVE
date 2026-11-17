@@ -92,7 +92,7 @@ async function listo(page) {
   await page.waitForFunction(() => !cola.length && conexion !== 'guardando' && !vaciando && !cargando, { timeout: 30000 });
   await espera(150);
 }
-async function ir(page, vistaNombre) { await page.click(`nav button[data-p="${vistaNombre}"]`); await espera(100); }
+async function ir(page, vistaNombre) { try { await page.click(`nav button[data-p="${vistaNombre}"]`); } catch (e) { const info = await page.$eval(`nav button[data-p="${vistaNombre}"]`, (b) => ({ cls: b.className, disp: getComputedStyle(b).display, navDisp: getComputedStyle(b.parentElement).display, w: innerWidth, vista, anchos: [...document.querySelectorAll("body *")].filter((x) => x.getBoundingClientRect().right > 380).slice(0, 8).map((x) => x.tagName + "." + x.className + "#" + x.id + " " + Math.round(x.getBoundingClientRect().right) + " " + (x.innerText || "").slice(0, 40)) })); throw new Error(`no pude tocar la pestaña ${vistaNombre}: ${JSON.stringify(info)}`); } await espera(100); }
 async function textoPantalla(page) { return page.$eval('#pantalla', (e) => e.innerText); }
 async function subir(page, selector, archivos) {
   const el = await page.$(selector);
@@ -107,7 +107,7 @@ async function rest(metodo, ruta, { token = null, cuerpo } = {}) {
   return { status: r.status, j };
 }
 const fmt = (x) => Number(x).toFixed(1);
-async function bloqueos(page) { return page.evaluate(() => { const e = document.querySelector('.sticky-save .hint'); return e ? e.innerText : ''; }); }
+async function bloqueos(page) { return page.evaluate(() => { const e = document.querySelector('#revBloqueos'); return e ? e.innerText : ''; }); }
 async function modalOk(page) { await page.waitForSelector('#modalOk'); await page.click('#modalOk'); await espera(200); }
 async function llenarModal(page, valores) {
   await page.waitForSelector('[data-mc]');
@@ -123,7 +123,7 @@ let lote1 = null;
 await paso('A', 'La fórmula de la dieta no viaja en el repo', async () => {
   await ir(admin, 'panel');
   const t = await textoPantalla(admin);
-  const dieta = t.match(/Materia seca de la dieta[\s\S]{0,400}/)?.[0] || '';
+  const dieta = t.match(/Materia seca[\s\S]{0,700}/)?.[0] || '';
   const fuentes = ['index.html', 'README.md', 'supabase/01_esquema.sql', 'supabase/02_seguridad.sql', 'supabase/03_funciones.sql', 'supabase/04_primer_admin.sql',
                    '.github/workflows/latido.yml'].map((f) => fs.readFileSync(path.join(AQUI, '..', f), 'utf8')).join(String.fromCharCode(10));
   const prop = J13.dieta.proporciones;
@@ -134,7 +134,7 @@ await paso('A', 'La fórmula de la dieta no viaja en el repo', async () => {
     ...[J13.dieta.origen, ...Object.values(J13.alimentos).flatMap((a) => [a.origen_kgm, a.origen_ms])].filter((x) => x && x.length > 12)
       .map((x) => x.slice(0, 40)).filter((x) => fuentes.includes(x)),
   ];
-  anotar('A1', 'Sin la fórmula cargada, el control de la dieta muestra s/d con su motivo', /Teórico\s+s\/d\s+la fórmula de la dieta no está cargada/i.test(dieta), { pantalla: dieta.slice(0, 300) });
+  anotar('A1', 'Sin la fórmula cargada, el control de la dieta muestra s/d con su motivo', /Teórico\s+s\/d[\s\S]*MS por día\s+s\/d[\s\S]*la fórmula de la dieta no está cargada/i.test(dieta), { pantalla: dieta.slice(0, 300) });
   anotar('A2', 'Ni la fórmula, ni los kg/día, ni los textos de origen del JSON del 13/8 aparecen en el código', hallados.length === 0,
     { buscados: { pares_de_la_formula: patrones.length, kg_dia: 2, textos_de_origen: [J13.dieta.origen, ...Object.values(J13.alimentos).flatMap((a) => [a.origen_kgm, a.origen_ms])].filter((x) => x && x.length > 12).length }, hallados });
 });
@@ -186,6 +186,9 @@ await paso('F', 'Vincular Maíz Silo del 13/8 ya cargado', async () => {
   await ir(admin, 'panel'); const panel = await textoPantalla(admin);
   const r13 = (await sql(`select id, importacion_id from relevamientos where fecha='2026-08-13'`))[0];
   const btn = await admin.$(`[data-vincular="${r13.id}|MS"]`);
+  const r31b = (await sql(`select id from relevamientos where fecha='2026-07-31'`))[0];
+  const botones31 = await admin.$$eval(`[data-vincular^="${r31b.id}|"]`, (xs) => xs.length);
+  const botones = await admin.$$eval('[data-vincular]', (xs) => xs.map((x) => x.dataset.vincular.split('|')[1]));
   const hayBotonMG = !!(await admin.$(`[data-vincular="${r13.id}|MG"]`));
   await btn.evaluate((e) => e.click());
   await admin.waitForSelector('.modal'); const modal = await admin.$eval('.modal', (e) => e.innerText.replace(/\s+/g, ' '));
@@ -220,14 +223,22 @@ await paso('F', 'Vincular Maíz Silo del 13/8 ya cargado', async () => {
   const lect = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: sil, cuerpo: { p_relevamiento: r13.id, p_alimento: 'MG', p_motivo: 'x' } });
   const anon = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { cuerpo: { p_relevamiento: r13.id, p_alimento: 'MG', p_motivo: 'x' } });
   const sinMotivo = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r13.id, p_alimento: 'MG', p_motivo: ' ' } });
+  const vieja31MG = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r31.id, p_alimento: 'MG', p_motivo: 'x' } });
+  const forzada = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r31.id, p_alimento: 'MS', p_motivo: 'x', p_forzar: true } });
   const mg = (await sql(`select count(*)::int n from bolsones where alimento='MG'`))[0].n;
+  anotar('V8', 'Vincular: el botón solo aparece para el relevamiento más reciente, y la base rechaza el 31/7 (salvo pedido explícito, que igual frena los duplicados)',
+    botones31 === 0 && botones.length === 2 && vieja31MG.status === 409 && /no es el más reciente/.test((vieja31MG.j || {}).message || '')
+      && forzada.status === 409 && /duplicaría/.test((forzada.j || {}).message || '') && mg === 0,
+    { botones_del_31_7: botones31, botones_del_13_8: botones, rechazo_31_7_MG: [vieja31MG.status, vieja31MG.j && vieja31MG.j.message],
+      forzado_31_7_MS: [forzada.status, forzada.j && forzada.j.message], bolsones_MG: mg });
   anotar('F4', 'No se vincula una foto más vieja encima de los de hoy; sin motivo, con rol lectura o sin sesión, la base dice que no',
     vieja.status === 409 && lect.status === 403 && anon.status === 401 && sinMotivo.status === 422 && mg === 0,
     { relevamiento_31_7: [vieja.status, vieja.j && vieja.j.message], lectura: [lect.status, lect.j && lect.j.message], sin_sesion: anon.status,
       sin_motivo: [sinMotivo.status, sinMotivo.j && sinMotivo.j.message], bolsones_MG: mg });
   // H: de dónde salió la referencia
-  const portal = (await textoPantalla(admin)).match(/Contraste con el portal[\s\S]{0,420}/)?.[0] || '';
-  anotar('H', 'El contraste con el portal dice de dónde salió el número', /Cargado del relevamiento del 13\/08\/2026 \(silobolsa_2026-08-13\.json\), el .* por Iñaki/.test(portal.replace(/\s+/g, ' ')),
+  const portal = (await textoPantalla(admin)).match(/Contraste con el portal[\s\S]{0,2500}/)?.[0] || '';
+  anotar('H', 'El contraste con el portal dice de dónde salió el número, y no dice «cargado a mano» (Panel y Ajustes)', /Cargado del relevamiento del 13\/08\/2026 \(silobolsa_2026-08-13\.json\), el .* por Iñaki/.test(portal.replace(/\s+/g, ' '))
+      && !/cargad[oa]s? a mano/i.test(portal) && !/cargad[oa]s? a mano/i.test(await (async () => { await ir(admin, 'param'); const t = await textoPantalla(admin); await ir(admin, 'panel'); return t.match(/Referencia del portal[\s\S]{0,600}/)?.[0] || ''; })()),
     { texto: portal.replace(/\s+/g, ' ').slice(0, 400) });
 });
 
@@ -303,23 +314,36 @@ await paso('1b', 'Primer lote real 11/11 por la revisión', async () => {
   const teo = await admin.evaluate(() => { const m = msDietaMedido(); const t = msDietaTeorico(m.ingredientes_faltantes); return { pct: t.pct, sin: t.sin, medido: txtMs(m) }; });
   const siloTxt = await admin.evaluate(() => txtMs(D.calidad.find((c) => c.alimento === 'MS')));
   anotar('1c2', 'Panel: las dos lecturas como cota «≤»; teórico sin harina de germen ≈ 69,5 % (fórmula y valores de casa)',
-    siloTxt === cotaDe(0) && teo.medido === cotaDe(1) && Math.abs(teo.pct - 69.529) < 0.01 && /Teórico sin Harina de Germen\s*69,5 %/i.test(panel) && panel.includes(cotaDe(0)),
-    { silo: siloTxt, teo, extracto: panel.match(/Materia seca de la dieta[\s\S]{0,700}/)?.[0] });
-  const portal = panel.match(/Contraste con el portal[\s\S]{0,900}/)?.[0];
-  anotar('1e', 'Contraste con el portal: el silo no embolsado se explica en una línea', /deja afuera a propósito/.test(portal || ''), { portal });
+    siloTxt === cotaDe(0) && teo.medido === cotaDe(1) && Math.abs(teo.pct - 69.529) < 0.01
+      && /Teórico para la muestra del 11\/11 \(sin harina de germen\)\s*69,5 %/i.test(panel) && panel.includes(cotaDe(0)),
+    { silo: siloTxt, teo, extracto: panel.match(/Materia seca[\s\S]{0,900}/)?.[0] });
+  // verificación 7 de la fase 4: la MS por día usa la fórmula COMPLETA (con germen); el «sin germen» es solo para la muestra
+  const teoCompleto = Object.entries(J13.dieta.proporciones).reduce((s2, [k, v]) => s2 + v * J13.alimentos[k].ms_pct / 100, 0) / Object.values(J13.dieta.proporciones).reduce((a, b) => a + b, 0) * 100;
+  const msDia = `${Math.round(J13.dieta.kg_dia_min * teoCompleto / 100 / 1000)}–${Math.round(J13.dieta.kg_dia_max * teoCompleto / 100 / 1000)} t`;
+  const enApp = await admin.evaluate(() => { const t = msDietaTeorico([]); return { completo: t.pct, min: D.dieta.kg_dia_min * t.pct / 100 / 1000, max: D.dieta.kg_dia_max * t.pct / 100 / 1000 }; });
+  anotar('G7', `Germen: MS por día con la fórmula completa (${msDia}); el teórico sin germen (69,5 %) solo para la muestra, rotulado`,
+    new RegExp(`MS por día\\s*${msDia}`).test(panel) && Math.abs(enApp.completo - teoCompleto) < 1e-9
+      && /Teórico para la muestra del 11\/11 \(sin harina de germen\)\s*69,5 %/i.test(panel),
+    { esperado_desde_el_json: { teorico_completo: teoCompleto, ms_por_dia: msDia }, app: enApp,
+      pantalla: (panel.match(/Teórico para la muestra[\s\S]{0,40}|MS por día[^\n]*\n?[^\n]*/g) || []).map((x) => x.replace(/\s+/g, ' ')) });
+  const portal = panel.match(/Contraste con el portal[\s\S]{0,2500}/)?.[0] || '';
+  anotar('1e', 'Contraste: portal del 13/8 contra bolsones del 11/11 dice «Fechas distintas» y no muestra ninguna conclusión',
+    /Fechas distintas \(11\/11 contra 13\/08\): no se compara/.test(portal) && /Se compara solo con fechas a 7 días o menos/.test(portal)
+      && !/cierra:|deja afuera a propósito|el portal tiene más|los bolsones dan más/.test(portal) && !/[+-]\d+,\d %/.test(portal),
+    { portal: portal.replace(/\s+/g, ' ').slice(0, 900) });
   const cal = await sql(`select tipo, alimento, ms_pct::text, peso_constante, pesadas, ingredientes_faltantes, peso_inicial_g::text from calidad order by tipo`);
   anotar('1c3', 'En la base: pesadas crudas, peso_constante = false, faltó HG', cal.length === 2 && cal.every((c) => c.peso_constante === false) && cal.find((c) => c.tipo === 'dieta').ingredientes_faltantes.join() === 'HG', { calidad: cal });
 });
 
 await paso('7', 'Primer lote real pendiente en la bandeja de Nico', async () => {
   const nico = await abrir('auditor');
-  const t = await textoPantalla(nico);
+  const marcaPestana = await nico.$eval('#navPrincipal [data-p="auditoria"] .pend', (e) => e.innerText).catch(() => '');
   const cab = await nico.$eval('#indQuien', (e) => e.innerText);
   await ir(nico, 'auditoria');
   const bandeja = await textoPantalla(nico);
   anotar('7', 'El lote del 11/11 está pendiente y Nico ve el número arriba',
-    lote1 && lote1.estado_auditoria === 'pendiente' && /^1\s/m.test(t.trim()) && /1 pendiente/.test(cab) && /11\/11\/2026[\s\S]*pendiente/.test(bandeja),
-    { estado_en_base: lote1 && lote1.estado_auditoria, cabecera: cab, bandeja: bandeja.slice(0, 400) });
+    lote1 && lote1.estado_auditoria === 'pendiente' && marcaPestana === '1' && /1 pendiente/.test(cab) && /11\/11\/2026[\s\S]*pendiente/.test(bandeja),
+    { estado_en_base: lote1 && lote1.estado_auditoria, marca_en_la_pestana: marcaPestana, cabecera: cab, bandeja: bandeja.slice(0, 400) });
   await nico.setViewport({ width: 375, height: 800 });
   await espera(200);
   await nico.screenshot({ path: path.join(SALIDA, 'bandeja_375.png'), fullPage: true });
@@ -390,9 +414,8 @@ await paso('8', 'Auditoría: observar un lote y re-medir', async () => {
   const nico = globalThis.nico; await nico.setViewport({ width: 1100, height: 900 });
   await nico.reload({ waitUntil: 'domcontentloaded' }); await nico.waitForFunction(() => yo && !pantallaAuth); await listo(nico);
   await nico.evaluate((id) => { auditLote = id; vista = 'auditoria'; render(); }, lote1.id);
-  await nico.select('#audRes', 'observada');
   await nico.type('#audCom', 'La lectura de MS5 no me cierra: la re-medí');
-  await nico.click('#btnAuditar'); await listo(nico);
+  await nico.$eval('#btnAuditarObs', (e) => e.click()); await listo(nico);
   const ms5 = (await sql(`select id from bolsones where etiqueta='MS5'`))[0];
   await nico.evaluate((id) => { fichaId = id; vista = 'ficha'; render(); }, ms5.id);
   await nico.click('#btnRemedir');
@@ -536,7 +559,7 @@ await paso('B', 'Alta de usuarios e invitaciones', async () => {
 await paso('9', 'Editar el mismo bolsón desde dos navegadores', async () => {
   const ms2 = (await sql(`select id from bolsones where etiqueta='MS2'`))[0];
   const otra = await abrir('admin');
-  for (const p of [admin, otra]) await p.evaluate((id) => { fichaId = id; vista = 'ficha'; render(); }, ms2.id);
+  for (const p of [admin, otra]) { await p.evaluate((id) => { fichaId = id; vista = 'ficha'; render(); }, ms2.id); await p.$eval('#btnEditArmado', (e) => e.click()); await espera(150); }
   await admin.$eval('[data-arm="armado_origen"]', (e) => { e.value = 'Lote 7 (primero)'; e.dispatchEvent(new Event('change')); });
   await listo(admin);
   await otra.$eval('[data-arm="armado_origen"]', (e) => { e.value = 'Lote 9 (segundo)'; e.dispatchEvent(new Event('change')); });
@@ -557,7 +580,7 @@ await paso('10', 'Cortar la red a mitad de una carga', async () => {
   await admin.type(`input[data-m="${ms1.id}"]`, '66,9');
   const borrador = await admin.evaluate(() => JSON.parse(localStorage.getItem('silobolsa_borrador_v4')));
   await admin.click('#btnGuardar'); await espera(200);
-  await admin.click('#revOk'); await espera(1500);
+  await admin.$eval('#revOk', (e) => e.click()); await espera(1500);
   const ind = await admin.$eval('#indGuardado', (e) => e.innerText);
   const enBase = await sql(`select count(*)::int n from mediciones where fecha='2026-11-18'`);
   const enCola = await admin.evaluate(() => JSON.parse(localStorage.getItem('silobolsa_cola_v4')).length);
@@ -566,7 +589,7 @@ await paso('10', 'Cortar la red a mitad de una carga', async () => {
   const despues = await sql(`select m.metros_restantes::text, b.etiqueta from mediciones m join bolsones b on b.id=m.bolson_id where fecha='2026-11-18'`);
   const ind2 = await admin.$eval('#indGuardado', (e) => e.innerText);
   anotar('10', 'Lo tipeado queda como borrador, dice "sin guardar" y al volver la red se guarda',
-    borrador.cargaBuf[ms1.id] === '66,9' && /sin guardar en la base/.test(ind) && enBase[0].n === 0 && enCola === 1 && despues.length === 1 && despues[0].metros_restantes === '66.9' && /guardado en la base/.test(ind2),
+    borrador.cargaBuf[ms1.id] === '66,9' && /sin guardar en la base/i.test(ind) && enBase[0].n === 0 && enCola === 1 && despues.length === 1 && despues[0].metros_restantes === '66.9' && /guardado en la base/i.test(ind2),
     { borrador_en_el_navegador: borrador.cargaBuf, indicador_sin_red: ind, en_la_base_sin_red: enBase[0].n, operaciones_en_cola: enCola, en_la_base_al_volver: despues, indicador_despues: ind2 });
 });
 
@@ -599,7 +622,7 @@ await paso('14', 'Regresiones', async () => {
     diag.filas.filter((f) => f.m === null).every((f) => f.nivel !== 'listo' || /s\/d/.test(f.txt)),
     { diag });
   anotar('F2.5', 'El recuento que no cuadra avisa antes de confirmar', /El recuento dice\s+30\s+bolsones/.test(txtRev), { aviso: txtRev.match(/El recuento dice[^\n]*/)?.[0] });
-  await admin.click('#revCancel'); await espera(200);
+  await admin.$eval('#revCancel', (e) => e.click()); await espera(200);
   const desp = await sql(`select (select count(*) from mediciones)::int m, (select count(*) from bolsones)::int b, (select count(*) from importaciones)::int l`);
   anotar('F2.4', 'Cancelar no deja rastro', JSON.stringify(antes) === JSON.stringify(desp) && await admin.evaluate(() => staging === null), { antes: antes[0], despues: desp[0] });
   // F2.1 ida y vuelta con la planilla en blanco que genera la app (inlineStr), llenada por código
@@ -704,17 +727,17 @@ await paso('14', 'Regresiones', async () => {
   const tot1 = await admin.evaluate(() => vivos().filter((b) => b.alimento === 'MG').length);
   const medKept = await sql(`select count(*)::int n from mediciones where bolson_id=$1`, [mg6]);
   await ir(admin, 'mapa');
-  const enMapa = await admin.$(`g.bolg[data-ficha="${mg6}"]`);
+  const enMapa = await admin.$(`.bolg[data-ficha="${mg6}"]`);
   anotar('F2.13', '«Ya no está» saca de totales y mapa y conserva las mediciones (el borrado definitivo ya no existe: nada se pisa)', tot1 === tot0 - 1 && medKept[0].n === 1 && !enMapa, { vivos_MG_antes: tot0, despues: tot1, mediciones_conservadas: medKept[0].n });
   // F2.15 con el dedo, a 375 px: dos toques sin arrastrar
   await admin.setViewport({ width: 375, height: 800, isMobile: true, hasTouch: true });
   await ir(admin, 'mapa'); await espera(300);
   const mg7 = (await sql(`select id, fila, posicion::int p from bolsones where etiqueta='MG7'`))[0];
-  const g = await admin.$(`g.bolg[data-ficha="${mg7.id}"]`);
+  const g = await admin.$(`.bolg[data-ficha="${mg7.id}"]`);
   await g.evaluate((el) => { el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 1, clientY: 1 })); el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 1, clientY: 1 })); });
   await espera(200);
   const elegido = await admin.evaluate(() => selMapa);
-  const destino = await admin.$('rect.hueco[data-fila="A"][data-pos="1"]');
+  const destino = await admin.$('.hueco[data-fila="A"][data-pos="1"]');
   await destino.evaluate((el) => el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })));
   await listo(admin);
   const mg7b = (await sql(`select fila, posicion::int p from bolsones where id=$1`, [mg7.id]))[0];
@@ -767,6 +790,62 @@ await paso('15', 'Login, bandeja y revisión usables a 375 px', async () => {
     { ancho_login: anchoLogin, ancho_revision: anchoRev, ancho_bandeja: anchoBand,
       controles_medidos: Object.fromEntries(Object.entries(tactil).map(([k, v]) => [k, v.total])), de_menos_de_44px: malos });
   await admin.setViewport({ width: 1100, height: 900 });
+});
+
+// ═══════════ fase 4 · 5 · auditoría compartida ═══════════
+await paso('V5', 'Auditoría compartida', async () => {
+  await admin.setViewport({ width: 1100, height: 900 });
+  const lote = (await sql(`select id, cargado_por from importaciones where fecha_medicion='2026-11-25' and tipo='planilla'`))[0];
+  // Iñaki, que cargó el lote, lo audita OK
+  await admin.evaluate((id) => { vista = 'auditoria'; auditLote = id; render(); }, lote.id);
+  const avisoPropio = await admin.$eval('#pantalla', (e) => (e.innerText.match(/Este lote lo cargaste vos[^\n]*/) || [''])[0]);
+  await admin.$eval('#btnAuditarOk', (e) => e.click()); await listo(admin);
+  const a1 = (await sql(`select estado_auditoria from importaciones where id=$1`, [lote.id]))[0].estado_auditoria;
+  const audI = await sql(`select resultado, es_quien_cargo, anulada from auditorias where importacion_id=$1 and auditor=$2`, [lote.id, banco.ids.admin]);
+  // Nico lo observa
+  const nico = globalThis.nico; await nico.setViewport({ width: 1100, height: 900 });
+  await nico.evaluate(() => recargar()); await listo(nico);
+  await nico.evaluate((id) => { vista = 'auditoria'; auditLote = id; render(); }, lote.id);
+  await nico.type('#audCom', 'MS3 terminado con 0 m: confirmar que se terminó (prueba)');
+  await nico.$eval('#btnAuditarObs', (e) => e.click()); await listo(nico);
+  const a2 = (await sql(`select estado_auditoria from importaciones where id=$1`, [lote.id]))[0].estado_auditoria;
+  // Nico vuelve a auditar OK
+  await nico.$eval('#btnAuditarOk', (e) => e.click()); await listo(nico);
+  const a3 = (await sql(`select estado_auditoria from importaciones where id=$1`, [lote.id]))[0].estado_auditoria;
+  const audN = await sql(`select resultado, es_quien_cargo, anulada, anulada_motivo, anulada_por = auditor as la_anulo_el_mismo from auditorias where importacion_id=$1 and auditor=$2 order by en`, [lote.id, banco.ids.auditor]);
+  const cam = (await sql(`select count(*)::int n from cambios where tabla='auditorias' and operacion='UPDATE'`))[0].n;
+  // Silvana no puede auditar
+  const sil = (await banco.sesionDe('lectura')).access_token;
+  const s1 = await rest('POST', '/rest/v1/rpc/auditar', { token: sil, cuerpo: { p_id: '00000000-0000-0000-0000-0000000000f1', p_importacion: lote.id, p_medicion: null, p_resultado: 'ok', p_comentario: '' } });
+  const s2 = await rest('POST', '/rest/v1/auditorias', { token: sil, cuerpo: { importacion_id: lote.id, resultado: 'ok', auditor: banco.ids.lectura } });
+  // la bandeja: una columna por auditor
+  await admin.evaluate(() => recargar()); await listo(admin);
+  await admin.evaluate(() => { vista = 'auditoria'; auditLote = null; filtroAud = 'todos'; render(); });
+  const fila = await admin.$eval('#pantalla', (e) => (e.innerText.match(/25\/11\/2026[^\n]*\n[\s\S]{0,200}/) || [''])[0].replace(/\s+/g, ' '));
+  const cabecera = await admin.$eval('#pantalla thead', (e) => e.innerText.replace(/\s+/g, ' '));
+  anotar('V5', 'Auditoría compartida: OK de quien cargó → auditado (control de quien cargó); Nico observa → observado; Nico OK → su observación anulada con motivo y vuelve a auditado; Silvana 403',
+    /control de quien cargó/.test(avisoPropio) && a1 === 'ok' && audI.length === 1 && audI[0].es_quien_cargo === true
+      && a2 === 'observada' && a3 === 'ok' && audN.length === 2 && audN[0].resultado === 'observada' && audN[0].anulada === true && /Reemplazada/.test(audN[0].anulada_motivo)
+      && audN[0].la_anulo_el_mismo && audN[1].resultado === 'ok' && !audN[1].anulada && audN.every((x) => x.es_quien_cargo === false)
+      && s1.status === 403 && s2.status === 403 && /IÑAKI/.test(cabecera) && /NICO/.test(cabecera) && cam >= 1,
+    { aviso_antes_de_guardar: avisoPropio, estado_tras_ok_de_inaki: a1, auditoria_de_inaki: audI, tras_observacion_de_nico: a2, tras_ok_de_nico: a3,
+      auditorias_de_nico: audN, updates_en_cambios: cam, silvana_rpc: [s1.status, s1.j && s1.j.message], silvana_directo: [s2.status, s2.j && s2.j.message],
+      bandeja: { columnas: cabecera, fila } });
+});
+
+// ═══════════ fase 4 · 6b · contraste con un portal a 3 días ═══════════
+await paso('V6', 'Contraste a 3 días', async () => {
+  const fb = await admin.evaluate(() => fechaUltimaMed(vivos().filter((b) => b.alimento === 'MG' && metrosAct(b) !== null)));
+  const fp = new Date(new Date(fb + 'T00:00:00Z').getTime() + 3 * 86400000).toISOString().slice(0, 10);
+  const antes = await admin.evaluate(() => clonar(D.referencia));
+  await admin.evaluate((fp) => guardarReferencia((r) => { r.fecha = fp; }), fp); await listo(admin);
+  await ir(admin, 'panel');
+  const portal = ((await textoPantalla(admin)).match(/Contraste con el portal[\s\S]{0,2500}/) || [''])[0];
+  const mg = (portal.match(/Maíz Grano[^\n]*(\n[^\n]*){0,8}/) || [''])[0].replace(/\s+/g, ' ');
+  anotar('V6', 'Contraste: con un portal a 3 días de la medición sí compara (diferencia y conclusión)',
+    !/Fechas distintas/.test(portal) && /[+-]\d+,\d %/.test(mg) && /(cierra:|el portal tiene más|los bolsones dan más|deja afuera)/.test(portal) && /Se compara con fechas a 7 días o menos/.test(portal),
+    { bolsones_MG_al: fb, portal_al: fp, fila_MG: mg.slice(0, 300) });
+  await admin.evaluate((r0) => guardarReferencia((r) => { r.fecha = r0.fecha; }), antes); await listo(admin);
 });
 
 // ═══════════ 13 · respaldo: exportar, restaurar en otro proyecto, comparar ═══════════

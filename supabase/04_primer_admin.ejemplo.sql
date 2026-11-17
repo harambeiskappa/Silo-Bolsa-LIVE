@@ -3,7 +3,8 @@
 -- Correr CUARTO, una sola vez, DESPUÉS de crear la cuenta de Iñaki en
 -- Authentication → Users → "Add user" (o de que él entre por primera vez).
 --
--- Antes de correrlo: reemplazar  iñaki@ejemplo.com  por el mail real.
+-- Copiarlo como 04_primer_admin.sql (ese nombre está en .gitignore: el mail
+-- real no entra al repo) y ahí reemplazar  iñaki@ejemplo.com  por el mail real.
 -- Los demás roles (Nico auditor, Silvana lectura) se dan desde la app,
 -- en Ajustes → Usuarios, con Iñaki logueado.
 -- ════════════════════════════════════════════════════════════════════
