@@ -901,6 +901,10 @@ function vPanel(){
     h += `<div class="alert w">La base todavía no tiene bolsones. ${esAdmin()
       ? `Primero cargá los relevamientos históricos (Ajustes → Datos → «Cargar relevamiento o respaldo JSON») y después la planilla en Carga.`
       : `Los carga Iñaki.`}</div>`;
+  else if(!D.bolsones.length)
+    h += `<div class="alert w">Hay relevamientos cargados pero ningún bolsón vivo: los relevamientos son fotos y no se vinculan solos.
+      ${esAdmin() ? `Si alguno de esos bolsones es de hoy (por ejemplo, los de silo del 13/8), vinculalo abajo, en Evolución del stock →
+      «Vincular un relevamiento con los bolsones de hoy». Si no, la primera planilla los da de alta como nuevos.` : `Lo resuelve Iñaki.`}</div>`;
 
   Object.keys(D.alimentos).forEach(k=>{
     const c = calibracion(k);
@@ -1115,7 +1119,58 @@ function vEvolucion(){
     });
     h += `</tr>`;
   });
-  return h + `</tbody></table></div></div>`;
+  h += `</tbody></table></div>`;
+  if(esAdmin()) h += vVincular();
+  return h + `</div>`;
+}
+/* ¿Este relevamiento ya tiene bolsones vivos de este alimento? (tildado al
+   cargarlo o vinculado después: en los dos casos queda el evento de alta
+   con el lote del relevamiento) */
+function vinculados(r, k){
+  return D.eventos.filter(e=>e.importacion_id===r.importacion_id && e.tipo==="alta" && (bol(e.bolson_id)||{}).alimento===k).length;
+}
+/* bolsones de hoy de ese alimento, con mediciones posteriores a la fecha:
+   vincular una foto más vieja encima los duplicaría (la base también lo frena) */
+function hayPosteriores(k, fecha){
+  return D.bolsones.filter(b=>b.alimento===k && b.estado!=="retirado" && b.estado!=="terminado"
+    && medsValidas(b.id).some(m=>m.fecha>fecha)).length;
+}
+function vVincular(){
+  let filas = "";
+  [...D.relevamientos].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).forEach(r=>{
+    const it = D.relevamiento_items.filter(i=>i.relevamiento_id===r.id);
+    [...new Set(it.map(i=>i.alimento))].forEach(k=>{
+      const a = D.alimentos[k]||{nombre:k}; if(a.sinBolson) return;
+      const g = it.filter(i=>i.alimento===k), m = g.filter(i=>i.metros!==null).reduce((s,i)=>s+i.metros,0);
+      const v = vinculados(r,k), post = hayPosteriores(k, r.fecha);
+      filas += `<div class="renglon-rev ${v?"listo":""}"><div class="cab" style="justify-content:space-between">
+        <span><b>${esc(a.nombre)}</b> del ${dmy(r.fecha)} · ${g.length} tramos · ${f(m,1)} m</span>
+        ${v ? `<span class="chip ok">vinculado: ${v} bolsón(es)</span>`
+          : post ? `<span class="src">ya hay ${post} bolsón(es) de hoy con mediciones posteriores: no se vincula</span>`
+          : `<button data-vincular="${esc(r.id)}|${esc(k)}">Son los mismos bolsones de hoy…</button>`}</div></div>`;
+    });
+  });
+  if(!filas) return "";
+  return `<details class="hist" style="margin-top:12px" ${D.bolsones.length?"":"open"}><summary>Vincular un relevamiento con los bolsones de hoy</summary>
+    <p class="hint" style="margin:8px 0">Si al cargar un relevamiento no se tildó «son los mismos bolsones de hoy», se puede hacer acá.
+    Da de alta los bolsones de ese alimento con su medición de esa fecha. Solo si alguien lo confirmó en el campo:
+    no se inventan correspondencias. No se borra después: un error se corrige marcándolos «ya no está».</p>${filas}</details>`;
+}
+function modalVincular(rid, k){
+  const r = D.relevamientos.find(x=>x.id===rid); if(!r) return;
+  const a = D.alimentos[k]||{nombre:k};
+  const g = D.relevamiento_items.filter(i=>i.relevamiento_id===rid && i.alimento===k).sort((x,y)=>(x.orden??999)-(y.orden??999));
+  const conM = g.filter(i=>i.metros!==null), m = conM.reduce((s,i)=>s+i.metros,0);
+  abrirModal({titulo:`Vincular ${a.nombre} del ${dmy(r.fecha)}`, ok:"Vincular",
+    texto:`Va a crear <b>${g.length} bolsones de ${esc(a.nombre)} con su medición del ${dmy(r.fecha)}</b> (${f(m,1)} m)${conM.length<g.length?`;
+      ${g.length-conM.length} sin metros quedan en s/d`:""}:<br><span class="src">${g.map(i=>esc(i.etiqueta)+" "+fNum(i.metros)).join(" · ")}</span><br><br>
+      Cada uno queda con un evento de alta con el motivo, y el próximo lote propone vincularlos. Hacelo solo si alguien
+      confirmó en el campo que son los mismos bolsones.`,
+    campos:[{clave:"motivo", etiqueta:"Motivo: quién lo confirmó y cómo", valor:"", placeholder:"ej. Iñaki: el orden de la hoja coincide con MS1–MS5"}],
+    validar:v=>String(v.motivo||"").trim()?null:"Hace falta el motivo.",
+    onOk:v=>{ cerrarModal(); encolar({fn:"vincular_desde_relevamiento", desc:`Vincular ${a.nombre} del ${dmy(r.fecha)} (${g.length} bolsones)`,
+      args:{p_relevamiento:rid, p_alimento:k, p_motivo:v.motivo.trim()}});
+      mostrarAviso(`Vinculando ${g.length} bolsones de ${a.nombre} del ${dmy(r.fecha)}…`); }});
 }
 
 /* ══════════════════ LECTOR DE PLANILLAS ══════════════════════════════
@@ -2149,7 +2204,8 @@ function svgExtractora(cx, y, w, color){
 
 function vMapa(){
   const bs = recorrido();
-  if(!bs.length) return `<div class="card"><h2>Mapa</h2><p class="hint" style="margin:0">No hay bolsones en la base todavía.</p></div>`;
+  if(!bs.length) return `<div class="card"><h2>Mapa</h2><p class="hint" style="margin:0">No hay bolsones en la base todavía.${D.relevamientos.length&&esAdmin()
+    ?" Los relevamientos cargados son fotos: si alguno es de los bolsones de hoy, se vincula desde Panel → Evolución del stock.":""}</p></div>`;
   const filas = [...new Set(bs.map(b=>b.ubicacion.fila||"A"))].sort();
   const W=1240, PAD=34, rowH=330, topY=70, MAXH=196;
   const maxM = Math.max(60, ...bs.map(b=>Math.max(metrosAct(b)||0, n(b.armado.metros_iniciales)||0)));
@@ -2950,6 +3006,21 @@ function mezclarAlimentos(base, archivo){
   });
   return out;
 }
+/* La última hoja conocida de un alimento (relevamiento o lote anterior a la
+   fecha del archivo) tiene exactamente las mismas etiquetas: es un indicio,
+   no una prueba. Se avisa; no se tilda solo. */
+function numeracionCoincide(k, g){
+  const et = xs => [...new Set(xs)].sort((a,b)=>a.localeCompare(b,"es",{numeric:true}));
+  const mias = et(g.items.filter(i=>i.alimento===k).map(i=>i.etiqueta));
+  if(!mias.length) return null;
+  const hojas = [];
+  D.relevamientos.filter(r=>r.fecha<g.fecha).forEach(r=>hojas.push({fecha:r.fecha, fuente:"hoja del relevamiento",
+    etiquetas:et(D.relevamiento_items.filter(i=>i.relevamiento_id===r.id && i.alimento===k).map(i=>i.etiqueta))}));
+  D.importaciones.filter(l=>(l.tipo==="planilla"||l.tipo==="manual") && l.fecha_medicion<g.fecha).forEach(l=>hojas.push({fecha:l.fecha_medicion, fuente:"planilla",
+    etiquetas:et(D.mediciones.filter(m=>m.importacion_id===l.id && !m.anulada && (bol(m.bolson_id)||{}).alimento===k).map(m=>m.etiqueta_planilla))}));
+  const u = hojas.filter(x=>x.etiquetas.length).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)))[0];
+  return u && u.etiquetas.join("|")===mias.join("|") ? u : null;
+}
 function prepararRelevamiento(j, archivo){
   const x = j.sesiones ? convertirViejo(j) : j;
   const fechas = [...new Set((x.mediciones||[]).filter(m=>n(m.metros_restantes)!==null).map(m=>m.fecha))].sort();
@@ -3008,11 +3079,16 @@ function vRelevamiento(){
     como bolsones vivos, con su medición de esa fecha: el próximo lote propone vincularlos y la historia sigue.
     Si no se tilda, quedan solo como foto. <b>No tildes nada que no esté confirmado</b>: no se inventan correspondencias.</p>`;
   Object.entries(R.alimentos).forEach(([k,a])=>{
-    h += `<label class="renglon-rev" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">
+    const coincide = numeracionCoincide(k, ult);
+    h += `<label class="renglon-rev ${coincide&&!a.vivo?"revisar":""}" style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">
       <input type="checkbox" data-relvivo="${k}" ${a.vivo?"checked":""} ${ult.ya?"disabled":""}>
       <span><b>${esc((D.alimentos[k]||{}).nombre||k)}</b>: ${a.n} tramos, ${f(a.m,1)} m — son los mismos que se miden hoy
-      <span class="src"><br>${ult.items.filter(i=>i.alimento===k).map(i=>esc(i.etiqueta)+" "+fNum(i.metros)).join(" · ")}</span></span></label>`;
+      <span class="src"><br>${ult.items.filter(i=>i.alimento===k).map(i=>esc(i.etiqueta)+" "+fNum(i.metros)).join(" · ")}</span>
+      ${coincide?`<span class="marca" style="display:block;color:#8a5d00">⚠ La numeración (${esc(coincide.etiquetas.join(", "))}) coincide con la
+        ${esc(coincide.fuente)} del ${dmy(coincide.fecha)}: puede que sean los mismos bolsones. Tildalo solo si alguien lo confirmó.</span>`:""}</span></label>`;
   });
+  h += `<p class="hint">Si no se tilda ahora y después se confirma en el campo, se puede vincular desde Panel → Evolución del stock →
+    «Vincular un relevamiento con los bolsones de hoy».</p>`;
   h += `</div>`;
   const ps = Object.entries(R.params);
   if(ps.length){
@@ -3051,7 +3127,7 @@ function confirmarRelevamiento(){
     const tot = {};
     g.items.forEach(i=>{ const t = tot[i.alimento] = tot[i.alimento]||{m:0,n:0,medidos:0}; t.n++; if(i.metros!==null){ t.m=+(t.m+i.metros).toFixed(2); t.medidos++; } });
     const parametros = esUlt ? Object.entries(R.params).filter(([k,p])=>p.traer && !p.igual)
-      .map(([k,p])=>({clave:k, valor:p.valor, origen:`Del relevamiento ${R.archivo}.`})) : [];
+      .map(([k,p])=>({clave:k, valor:p.valor, origen:`Del relevamiento del ${dmy(g.fecha)} (${R.archivo}).`})) : [];
     const p = { id:g.importacion_id, relevamiento_id:g.relevamiento_id, archivo:R.archivo, fecha:g.fecha, nota:R.nota,
       items:g.items.map(i=>({etiqueta:i.etiqueta, grupo:i.grupo, alimento:i.alimento, metros:i.metros, estado:i.estado, nota:i.nota, orden:i.orden})),
       vivos, parametros, resumen:{totales:tot, vivos:vivos.length},
@@ -3426,6 +3502,15 @@ function datosXlsx(){
    esto está para contrastar dos caminos independientes, no para depender
    de uno. Cuando cierran, las dos fuentes se refuerzan; cuando no, la
    diferencia misma es la información. */
+/* De dónde salió el número del portal que se está mostrando */
+function origenReferencia(){
+  const pr = D.parametrosFila.referencia;
+  if(!pr || !pr.actualizado_por) return "Sin cargar.";
+  const cuando = `el ${dmyh(pr.actualizado_en)} por ${esc(nombreUsuario(pr.actualizado_por))}`;
+  const o = String(pr.origen||"");
+  if(/^Del relevamiento/i.test(o)) return `Cargado ${esc(o.replace(/^Del relevamiento/i,"del relevamiento").replace(/\.$/,""))}, ${cuando}.`;
+  return `Cargado a mano ${cuando}.`;
+}
 function vReferencia(){
   const R = D.referencia;
   if(!R || !Object.values(R.valores||{}).some(v=>v!=null)) return "";
@@ -3453,7 +3538,7 @@ function vReferencia(){
   });
   return `<div class="card"><h2>Contraste con el portal de Nico</h2>
     <p class="hint">${esc(R.fuente)} · <b>al ${esc(R.fecha||"s/d")}</b>. ${esc(R.nota)}
-    Se carga a mano desde Ajustes, así queda claro de cuándo es cada número.</p>
+    ${origenReferencia()}</p>
     <table class="resp"><thead><tr><th>Alimento</th><th class="r">En bolsones</th>
       <th class="r">Portal (tn)</th><th class="r">Diferencia</th><th class="r">kg/m que implica</th>
       <th>Qué dice</th></tr></thead><tbody>${filas}</tbody></table></div>`;
@@ -3609,7 +3694,7 @@ function vAuth(){
     que te dé un rol en Ajustes → Usuarios. Hasta entonces la base no te muestra ningún dato.</p>
     <div class="bar"><button id="btnReintentar">Ya me lo dio: reintentar</button><button class="d" id="btnSalir">Salir</button></div></div>`;
   return `<div class="login card"><h2>Entrar</h2>
-    <p class="hint">Con el email y la contraseña de tu usuario. Si es la primera vez, usá el link del mail de invitación.</p>
+    <p class="hint">La cuenta te la crea Iñaki. Entrá con el mail y la contraseña provisoria que te pasó, y cambiala en Ajustes → Mi cuenta.</p>
     <form id="formLogin">
     <input id="lgEmail" type="email" autocomplete="username" placeholder="email" value="${esc(lsGet("silobolsa_ultimo_email")||"")}">
     <input id="lgClave" type="password" autocomplete="current-password" placeholder="contraseña">
@@ -3833,6 +3918,7 @@ function cablear(){
     onOk:async v=>{ try{ await sbFetch("/auth/v1/user",{method:"PUT", body:JSON.stringify({password:v.a})}); cerrarModal(); mostrarAviso("Contraseña cambiada."); }
                     catch(e){ document.getElementById("modalErr").textContent = e.message; } }}));
   // relevamiento y restauración
+  document.querySelectorAll("[data-vincular]").forEach(el=>{ el.onclick = ()=>{ const [rid,k] = el.dataset.vincular.split("|"); modalVincular(rid,k); }; });
   on("relCancel", ()=>{ relev=null; vista="param"; render(); });
   on("relOk", confirmarRelevamiento);
   document.querySelectorAll("[data-relvivo]").forEach(el=>{ el.onchange = ()=>{ relev.alimentos[el.dataset.relvivo].vivo = el.checked; render(); }; });

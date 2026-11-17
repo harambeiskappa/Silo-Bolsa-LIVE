@@ -14,13 +14,15 @@ En el HTML va solo la URL del proyecto y la clave pública; la clave `service_ro
 | `supabase/02_seguridad.sql` | Roles, RLS en todas las tablas, registro de cambios, reglas de "nada se pisa". |
 | `supabase/03_funciones.sql` | Las funciones que usa la app (confirmar un lote, corregir, auditar, restaurar…). |
 | `supabase/04_primer_admin.sql` | Deja a Iñaki como admin (editar el mail antes de correrlo). |
+| `supabase/05_vincular_relevamiento.sql` | Vincular después un relevamiento ya cargado con los bolsones de hoy. Se corre solo, sin tocar 01..04. |
 | `.github/workflows/latido.yml` | Llamada diaria para que el plan gratis de Supabase no pause el proyecto. |
 | `pruebas/` | Banco de pruebas local (Postgres en memoria con el mismo SQL) y la prueba de punta a punta. |
 
 ## Poner en marcha (una sola vez)
 
 1. **Base.** En el panel de Supabase → SQL Editor, correr en este orden, cada uno completo:
-   `01_esquema.sql`, `02_seguridad.sql`, `03_funciones.sql`.
+   `01_esquema.sql`, `02_seguridad.sql`, `03_funciones.sql`, `05_vincular_relevamiento.sql`.
+   En una base que ya tiene 01..03 corridos, alcanza con correr `05_vincular_relevamiento.sql`.
 2. **Auth — obligatorio.** Authentication → Sign In / Providers → Email:
    - **«Allow new users to sign up» en OFF.** Las cuentas las crea solo el admin desde el panel.
    - **«Confirm email» en ON.** Verificarlo.

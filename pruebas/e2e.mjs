@@ -150,7 +150,15 @@ await paso('1', 'Migración exacta (relevamientos 31/7 y 13/8)', async () => {
   await admin.waitForSelector('[data-relvivo="MS"]');
   const t13 = await textoPantalla(admin);
   const propuestos = await admin.evaluate(() => [...document.querySelectorAll('[data-relpar]')].map((e) => e.dataset.relpar + ':' + (e.checked ? 'sí' : 'no')));
-  await admin.click('[data-relvivo="MS"]'); await espera(150);
+  // F3: la casilla viene apagada, pero si la numeración coincide con la última hoja conocida, se avisa al lado
+  const casillas = await admin.evaluate(() => [...document.querySelectorAll('[data-relvivo]')].map((e) => ({
+    alimento: e.dataset.relvivo, tildada: e.checked, aviso: ((e.closest('label').querySelector('.marca') || {}).innerText || '').replace(/\s+/g, ' ') })));
+  const msNum = J13.bolsones.filter((b) => b.alimento === 'MS').map((b) => b.id).join(', ');
+  anotar('F3', 'Revisión del 13/8: la casilla de Maíz Silo viene apagada, pero avisa que su numeración coincide con la hoja del 31/7',
+    casillas.every((c) => !c.tildada) && /coincide con la hoja del relevamiento del 31\/07\/2026/.test((casillas.find((c) => c.alimento === 'MS') || {}).aviso || '')
+      && (casillas.find((c) => c.alimento === 'MS').aviso.includes(msNum)) && !(casillas.find((c) => c.alimento === 'MG') || {}).aviso,
+    { casillas });
+  // como en la base real: NO se tilda Maíz Silo
   await admin.click('#relOk'); await listo(admin);
   const dietaBase = (await sql(`select valor from parametros where clave='dieta'`))[0].valor;
   const alimBase = (await sql(`select valor from parametros where clave='alimentos'`))[0].valor;
@@ -167,10 +175,60 @@ await paso('1', 'Migración exacta (relevamientos 31/7 y 13/8)', async () => {
     { sql: tot, python: { '2026-07-31': PY['2026-07-31'], '2026-08-13': PY['2026-08-13'] }, pantalla_13_8: t13.match(/13\/08\/2026[\s\S]{0,200}/)?.[0] });
   anotar('1a2', 'Relevamiento 31/7 cargado como foto: SQL = Python', g('2026-07-31', 'MG') === PY['2026-07-31'].MG.m && g('2026-07-31', 'MS') === PY['2026-07-31'].MS.m,
     { pantalla: t31.slice(0, 300) });
-  anotar('1a3', 'Solo los de silo del 13/8 quedan como bolsones vivos, con su medición', vivos.length === J13.bolsones.filter((b) => b.alimento === 'MS').length && vivos.every((v) => v.origen === 'migracion'),
-    { vivos });
+  anotar('1a3', 'Sin tildar nada, el 13/8 queda solo como foto: ningún bolsón vivo', vivos.length === 0, { vivos });
   const ref = await sql(`select valor from parametros where clave='referencia'`);
   anotar('1a4', 'La referencia del portal del 13/8 entra desde el JSON (no desde el repo)', ref[0].valor.valores.MS === J13.referencia.valores.MS, { referencia: ref[0].valor });
+});
+
+// ═══════════ F · vincular después lo que no se tildó al cargar ═══════════
+await paso('F', 'Vincular Maíz Silo del 13/8 ya cargado', async () => {
+  await ir(admin, 'mapa'); const mapa = await textoPantalla(admin);
+  await ir(admin, 'panel'); const panel = await textoPantalla(admin);
+  const r13 = (await sql(`select id, importacion_id from relevamientos where fecha='2026-08-13'`))[0];
+  const btn = await admin.$(`[data-vincular="${r13.id}|MS"]`);
+  const hayBotonMG = !!(await admin.$(`[data-vincular="${r13.id}|MG"]`));
+  await btn.evaluate((e) => e.click());
+  await admin.waitForSelector('.modal'); const modal = await admin.$eval('.modal', (e) => e.innerText.replace(/\s+/g, ' '));
+  await llenarModal(admin, { motivo: 'Iñaki confirmó en el campo: el orden de la hoja coincide (prueba)' });
+  await listo(admin);
+  const viv = await sql(`select b.etiqueta, b.estado, m.metros_restantes::text m, m.origen, m.fecha::text, m.importacion_id = $1 as del_relevamiento
+                           from bolsones b join mediciones m on m.bolson_id=b.id where b.alimento='MS' order by b.etiqueta`, [r13.importacion_id]);
+  const suma = (await sql(`select sum(m.metros_restantes)::text s from mediciones m join bolsones b on b.id=m.bolson_id where b.alimento='MS'`))[0].s;
+  const ev = await sql(`select detalle from eventos e join bolsones b on b.id=e.bolson_id where b.alimento='MS' and e.tipo='alta'`);
+  const cam = (await sql(`select count(*)::int n from cambios where tabla in ('bolsones','mediciones','eventos') and operacion='INSERT' and usuario=$1`, [banco.ids.admin]))[0].n;
+  const nMS = J13.bolsones.filter((b) => b.alimento === 'MS').length;
+  anotar('F1', `Vincular Maíz Silo del 13/8 ya cargado: ${nMS} bolsones con su medición del 13/8, que suman lo mismo que Python`,
+    /No hay bolsones en la base todavía/.test(mapa) && /se vincula desde Panel/.test(mapa) && /ningún bolsón vivo/.test(panel)
+    && new RegExp(`Va a crear ${nMS} bolsones de Maíz Silo con su medición del 13/08/2026`).test(modal) && hayBotonMG
+    && viv.length === nMS && viv.every((v) => v.origen === 'migracion' && v.fecha === '2026-08-13' && v.del_relevamiento && v.estado === 'cerrado')
+    && suma === PY['2026-08-13'].MS.m && ev.length === nMS && ev.every((e) => /confirmó en el campo/.test(e.detalle)) && cam >= nMS * 3,
+    { aviso_mapa: mapa.slice(0, 160), aviso_modal: modal.slice(0, 260), bolsones: viv, suma_sql: suma, python: PY['2026-08-13'].MS.m,
+      evento_alta: ev[0], filas_en_cambios: cam });
+  // dos veces más: por la app (el botón ya no está) y directo a la base
+  const botonDespues = !!(await admin.$(`[data-vincular="${r13.id}|MS"]`));
+  const tok = (await banco.sesionDe('admin')).access_token;
+  const otra = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r13.id, p_alimento: 'MS', p_motivo: 'otra vez' } });
+  const otraMas = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r13.id, p_alimento: 'MS', p_motivo: 'otra vez' } });
+  const despues = (await sql(`select count(*)::int b, (select count(*)::int from mediciones m join bolsones x on x.id=m.bolson_id where x.alimento='MS') m from bolsones where alimento='MS'`))[0];
+  anotar('F2', 'Vincular dos veces más no duplica nada: la base contesta «ya estaba vinculado»',
+    !botonDespues && otra.status === 200 && otra.j.ya_existia === true && otraMas.j.ya_existia === true && despues.b === nMS && despues.m === nMS,
+    { boton_en_la_app: botonDespues, respuesta: otra.j, bolsones_y_mediciones_MS: despues });
+  // la foto del 31/7 no se puede vincular encima de bolsones con mediciones posteriores; y lectura no puede vincular
+  const r31 = (await sql(`select id from relevamientos where fecha='2026-07-31'`))[0];
+  const vieja = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r31.id, p_alimento: 'MS', p_motivo: 'x' } });
+  const sil = (await banco.sesionDe('lectura')).access_token;
+  const lect = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: sil, cuerpo: { p_relevamiento: r13.id, p_alimento: 'MG', p_motivo: 'x' } });
+  const anon = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { cuerpo: { p_relevamiento: r13.id, p_alimento: 'MG', p_motivo: 'x' } });
+  const sinMotivo = await rest('POST', '/rest/v1/rpc/vincular_desde_relevamiento', { token: tok, cuerpo: { p_relevamiento: r13.id, p_alimento: 'MG', p_motivo: ' ' } });
+  const mg = (await sql(`select count(*)::int n from bolsones where alimento='MG'`))[0].n;
+  anotar('F4', 'No se vincula una foto más vieja encima de los de hoy; sin motivo, con rol lectura o sin sesión, la base dice que no',
+    vieja.status === 409 && lect.status === 403 && anon.status === 401 && sinMotivo.status === 422 && mg === 0,
+    { relevamiento_31_7: [vieja.status, vieja.j && vieja.j.message], lectura: [lect.status, lect.j && lect.j.message], sin_sesion: anon.status,
+      sin_motivo: [sinMotivo.status, sinMotivo.j && sinMotivo.j.message], bolsones_MG: mg });
+  // H: de dónde salió la referencia
+  const portal = (await textoPantalla(admin)).match(/Contraste con el portal[\s\S]{0,420}/)?.[0] || '';
+  anotar('H', 'El contraste con el portal dice de dónde salió el número', /Cargado del relevamiento del 13\/08\/2026 \(silobolsa_2026-08-13\.json\), el .* por Iñaki/.test(portal.replace(/\s+/g, ' ')),
+    { texto: portal.replace(/\s+/g, ' ').slice(0, 400) });
 });
 
 // ═══════════ 1 · 1b · 1c · 7 · el lote del 11/11 ═══════════
@@ -672,6 +730,8 @@ await paso('15', 'Login, bandeja y revisión usables a 375 px', async () => {
   await p.goto(APP); await p.waitForSelector('#formLogin');
   const anchoLogin = await p.evaluate(() => document.documentElement.scrollWidth);
   const tLogin = await p.evaluate(MEDIR);
+  const txtLogin = await p.$eval('#pantalla', (e) => e.innerText.replace(/\s+/g, ' '));
+  anotar('G', 'El login ya no habla de un mail de invitación', /La cuenta te la crea Iñaki/.test(txtLogin) && !/mail de invitación/.test(txtLogin), { texto: txtLogin.slice(0, 220) });
   await p.screenshot({ path: path.join(SALIDA, 'login_375.png') });
   await c.close();
   const tactil = { login: tLogin };
