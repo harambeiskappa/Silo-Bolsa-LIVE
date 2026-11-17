@@ -254,6 +254,8 @@ await paso('6', 'Impresa', async () => {
   fs.writeFileSync(path.join(SALIDA, 'planilla_impresa_app.pdf'), pdf);
   const paginas = (Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
   const cuenta = await pg.evaluate(() => [...document.querySelectorAll('h2')].map((h) => h.childNodes[0].textContent.trim() + ': ' + (h.nextElementSibling && h.nextElementSibling.classList.contains('dos') ? h.nextElementSibling.querySelectorAll('td.n').length : '')));
+  // Humedad: solo dos filas, Silo y Dieta (auditoría de la fase 5, L)
+  const humedad = await pg.evaluate(() => [...document.querySelectorAll('table.hum tbody tr')].map((tr) => tr.cells[0].textContent.trim()));
   await pg.emulateMediaType('print'); await pg.setViewport({ width: 794, height: 1123 });
   const appPng = path.join(SALIDA, 'impresa-app.png'); await pg.screenshot({ path: appPng, fullPage: true });
   // la referencia: su PDF pasado a imagen con LibreOffice
@@ -273,9 +275,9 @@ await paso('6', 'Impresa', async () => {
   fs.writeFileSync(path.join(SALIDA, 'planilla_impresa_60_renglones.pdf'), pdf60);
   const paginas60 = (Buffer.from(pdf60).toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
   await pg.close();
-  anotar('6', 'Impresa con 30 + 10 renglones: una sola hoja A4 (PDF de una página), al lado de la referencia; con 60 de maíz sigue al dorso',
-    paginas === 1 && cuenta.map((x) => x.trim()).join() === 'MAÍZ GRANO: 30,MAÍZ SILO: 10,HUMEDAD:' && paginas60 === 2 && !!refPng && /de la mitad del triángulo de una punta a la mitad del otro/.test(html),
-    { paginas_pdf: paginas, bloques: cuenta, paginas_con_60_de_maiz: paginas60, captura: 'impresa-lado-a-lado.png', referencia_como_imagen: refPng && path.basename(refPng) });
+  anotar('6', 'Impresa con 30 + 10 renglones: una sola hoja A4 (PDF de una página), al lado de la referencia; Humedad solo con Silo y Dieta; con 60 de maíz sigue al dorso',
+    paginas === 1 && humedad.join() === 'Silo,Dieta' && cuenta.map((x) => x.trim()).join() === 'MAÍZ GRANO: 30,MAÍZ SILO: 10,HUMEDAD:' && paginas60 === 2 && !!refPng && /de la mitad del triángulo de una punta a la mitad del otro/.test(html),
+    { paginas_pdf: paginas, bloques: cuenta, filas_de_humedad: humedad, paginas_con_60_de_maiz: paginas60, captura: 'impresa-lado-a-lado.png', referencia_como_imagen: refPng && path.basename(refPng) });
 });
 
 // ═══════════ 7 · compatibilidad con los formatos viejos ═══════════
@@ -340,12 +342,13 @@ await paso('9', 'Carga a mano con el teclado', async () => {
   await iñaki.setViewport({ width: 375, height: 812, isMobile: true, hasTouch: true });
   await ir(iñaki, 'carga', 'cargaModo="mano"; cargaBuf={}');
   const ancho = await iñaki.evaluate(() => document.documentElement.scrollWidth);
+  const humedadMano = await iñaki.evaluate(() => [...document.querySelectorAll('table.mano.hum tbody tr')].filter((tr) => tr.querySelector('[data-hm]')).map((tr) => tr.cells[0].textContent.trim()));
   await iñaki.screenshot({ path: path.join(SALIDA, 'carga-a-mano-375.png'), fullPage: true });
   await iñaki.setViewport({ width: 1440, height: 1000 });
-  anotar('9', 'Carga a mano: 10 renglones tipeados solo con el teclado (Tab, Enter, Ctrl+Enter) y la revisión los recibe',
+  anotar('9', 'Carga a mano: 10 renglones tipeados solo con el teclado (Tab, Enter, Ctrl+Enter) y la revisión los recibe; Humedad solo con Silo y Dieta',
     foco0 === 'MG|1' && foco10 === 'MG|11' && st.vista === 'revision' && st.tipo === 'manual' && st.filas.length === 10
-      && st.filas.every((x, i) => x[0] === 'MG' + (i + 1) && x[1] === Number(diez[i].replace(',', '.'))) && ancho <= 375,
-    { tabs_hasta_cargar_a_mano: tabs, foco_al_abrir: foco0, foco_despues_de_10_enter: foco10, tipeado: diez, revision: st, ancho_a_375: ancho });
+      && st.filas.every((x, i) => x[0] === 'MG' + (i + 1) && x[1] === Number(diez[i].replace(',', '.'))) && ancho <= 375 && humedadMano.join() === 'Silo,Dieta',
+    { filas_de_humedad: humedadMano, tabs_hasta_cargar_a_mano: tabs, foco_al_abrir: foco0, foco_despues_de_10_enter: foco10, tipeado: diez, revision: st, ancho_a_375: ancho });
 });
 
 fs.writeFileSync(path.join(SALIDA, 'resultados-planillas.json'), JSON.stringify(resultados, null, 1));
