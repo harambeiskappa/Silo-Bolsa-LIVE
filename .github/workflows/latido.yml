@@ -1,0 +1,22 @@
+# Latido diario: una lectura liviana para que Supabase no pause el proyecto
+# gratuito por inactividad. Usa solo la clave pública (la misma del HTML):
+# la función latido() escribe a lo sumo una fila por hora en `latidos`.
+# Si falla, el run queda en rojo en la pestaña Actions del repo.
+name: Latido diario
+on:
+  schedule:
+    - cron: "17 11 * * *"   # todos los días, 08:17 de Argentina
+  workflow_dispatch: {}      # botón "Run workflow" para probarlo a mano
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar a latido()
+        env:
+          SB_URL: https://ckvsiwiizwdrvrpuucxa.supabase.co
+          SB_KEY: sb_publishable_fLwisrwlOO9Mv2_lwXguXg_L-btmbLu
+        run: |
+          r=$(curl -sS -f -X POST "$SB_URL/rest/v1/rpc/latido" \
+                -H "apikey: $SB_KEY" -H "Content-Type: application/json" \
+                -d '{"p_origen":"github-action"}')
+          echo "Respuesta de la base: $r"

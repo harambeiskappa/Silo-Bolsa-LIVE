@@ -1,0 +1,21 @@
+# Este repo no lleva datos: las mediciones viven en la carpeta del proyecto, fuera del repo.
+datos/
+*.json
+!package.json
+*.xlsx
+*.xls
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.pdf
+# Claves: nunca al repo
+.env
+.env.*
+*service_role*
+*credentials*
+
+# dependencias del banco de pruebas
+node_modules/
+# salidas del banco de pruebas (traen datos reales: no van al repo)
+pruebas/salida/

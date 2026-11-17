@@ -1,0 +1,14 @@
+{
+  "name": "silobolsa-pruebas",
+  "private": true,
+  "type": "module",
+  "description": "Banco de pruebas local de Silo Bolsa LIVE (no va a producción)",
+  "scripts": {
+    "banco": "node servidor_prueba.mjs 8787",
+    "e2e": "node e2e.mjs ../../datos ./salida"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "puppeteer-core": "24.10.0"
+  }
+}
