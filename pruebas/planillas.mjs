@@ -136,10 +136,13 @@ await paso('1', 'Ida y vuelta con el Excel', async () => {
       && igualPy(t) && igualPy(base) && st.fecha === '2026-11-18' && st.quien === 'Silvana' && /planilla nueva/.test(st.formato) && /Formato detectado: planilla nueva/.test(pantalla)
       && Math.abs(siloOk.pct - P(SILO, 'ms_pct_cota_superior')) < 1e-9 && siloOk.constante === false && siloOk.origen === SILO.origen_tipo
       && Math.abs(dietaOk.pct - P(DIETA, 'ms_pct_cota_superior')) < 1e-9 && dietaOk.constante === false && dietaOk.faltantes.join() === 'HG'
-      && msBase.length === 2 && !bloq,
+      && msBase.length === 2 && !bloq
+      // contra la referencia: las únicas diferencias son las deliberadas (A2 de Mediciones con «de una punta»; % MS con 0.0 %)
+      && JSON.stringify(Object.fromEntries(Object.entries(comp.diferencias).map(([h, d]) => [h, d.map((x) => x.celda)]))) === JSON.stringify({ Mediciones: ['A2'], Humedad: ['I5', 'I6'] })
+      && Object.values(comp.estructura).every((e) => e.igual),
     { renglones_por_defecto: bloques, sin_bloque: fuera, python: PY, app_al_importar: t, base_al_guardar: base, fecha: st.fecha, midio: st.quien, formato: st.formato,
       humedad: st.ms, en_la_base: msBase, textos_de_la_planilla_en_blanco: { inlineStr: textosBlanco.inlineStr, sharedStrings: textosBlanco.sharedStrings },
-      comparacion_con_la_referencia: { hojas: comp.hojas, celdas_iguales: comp.iguales, diferencias: comp.diferencias,
+      comparacion_con_la_referencia: { hojas: comp.hojas, celdas_iguales: comp.iguales, diferencias: comp.diferencias, vacias_sin_relleno_con_otra_letra: comp.vacias_con_formato_de_letra_distinto,
         estructura_igual: Object.fromEntries(Object.entries(comp.estructura).map(([k, v]) => [k, v.igual])), estructura: comp.estructura } });
   fs.writeFileSync(path.join(SALIDA, 'comparacion_con_referencia.json'), JSON.stringify(comp, null, 1));
 });
@@ -174,9 +177,10 @@ await paso('3', 'Fórmulas de Humedad', async () => {
   const sg = [P(SILO, 'peso_10min_g'), P(SILO, 'peso_15min_g')], dg = [P(DIETA, 'peso_10min_g'), P(DIETA, 'peso_15min_g'), DIETA3];
   anotar('3', `LibreOffice: ${sg.join(' → ')} g da ${sg[1]} % y «no: seguir pesando»; ${dg.join(' → ')} g da ${dg[2]} % y «sí»; sin errores de fórmula`,
     Math.abs(h.I5.v - sg[1] / 100) < 1e-9 && h.J5.v === 'no: seguir pesando' && Math.abs(h.I6.v - dg[2] / 100) < 1e-9 && h.J6.v === 'sí'
-      && h.G6.v === dg[2] && h.H6.v === dg[1] && val.errores.length === 0 && h.I6.fmt === '0.0%',
+      && h.G6.v === dg[2] && h.H6.v === dg[1] && val.errores.length === 0 && h.I6.fmt === '0.0%'
+      && !Object.keys(h).some((c) => /^[A-K]7$/.test(c)) && /^Solo silo y dieta\./.test((h.A2 || {}).v || ''),
     { silo: { ultimo: h.G5.v, anterior: h.H5.v, ms: h.I5.v, constante: h.J5.v }, dieta: { ultimo: h.G6.v, anterior: h.H6.v, ms: h.I6.v, formato: h.I6.fmt, constante: h.J6.v },
-      fila_vacia: { ms: (h.I7 || {}).v ?? '(vacía)', constante: (h.J7 || {}).v ?? '(vacía)' }, errores: val.errores });
+      fila_7: Object.keys(h).filter((c) => /^[A-K]7$/.test(c)), errores: val.errores });
 });
 
 // ═══════════ 4 · metros como los escribe Silvana ═══════════

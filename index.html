@@ -3383,13 +3383,14 @@ function planillaXlsx(){
   const enc = ["Muestra","Al empezar (g)",...MINUTOS_MS.map(x=>`${x} min (g)`),"Último peso","Peso anterior","% MS","¿Peso constante?","De dónde / qué faltó en la dieta"];
   const f2 = [
     filaXml(1, [celdaXml("A1",1,"Humedad (% de materia seca)")]),
-    filaXml(2, [celdaXml("A2",2,"Pesar cada 5 minutos hasta que dos pesadas seguidas den igual (1 g o menos de diferencia). Completá solo lo amarillo.")]),
+    filaXml(2, [celdaXml("A2",2,"Solo silo y dieta. Pesar cada 5 minutos hasta que dos pesadas seguidas den igual (1 g o menos de diferencia). Completá solo lo amarillo.")]),
     filaXml(4, enc.map((t,i)=>celdaXml("ABCDEFGHIJK"[i]+4, 14, t)), 30)
   ];
-  [["Silo",100],["Dieta",100],["",null]].forEach(([nom, ini], i)=>{
+  // solo silo y dieta (17/11): dos filas, sin una tercera en blanco
+  [["Silo",100],["Dieta",100]].forEach(([nom, ini], i)=>{
     const q = 5+i;
     f2.push(filaXml(q, [
-      nom ? celdaXml("A"+q,15,nom) : celdaXml("A"+q,18), celdaXml("B"+q,6,ini??undefined),
+      celdaXml("A"+q,15,nom), celdaXml("B"+q,6,ini),
       celdaXml("C"+q,6), celdaXml("D"+q,6), celdaXml("E"+q,6), celdaXml("F"+q,6),
       celdaXml("G"+q,16,{f:`IF(F${q}<>"",F${q},IF(E${q}<>"",E${q},IF(D${q}<>"",D${q},IF(C${q}<>"",C${q},""))))`}),
       celdaXml("H"+q,16,{f:`IF(F${q}<>"",E${q},IF(E${q}<>"",D${q},IF(D${q}<>"",C${q},IF(C${q}<>"",B${q},""))))`}),

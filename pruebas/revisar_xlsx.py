@@ -25,12 +25,15 @@ def comparar(a, b):
         if nombre not in A.sheetnames:
             out["diferencias"][nombre] = "falta la hoja"; continue
         x, y = A[nombre], B[nombre]
-        dif, iguales = [], 0
+        dif, iguales, invisibles = [], 0, []
         for fila in range(1, max(x.max_row, y.max_row) + 1):
             for col in range(1, max(x.max_column, y.max_column) + 1):
                 cx, cy = x.cell(fila, col), y.cell(fila, col)
                 vx, vy = cx.value, cy.value
                 ex, ey = estilo(cx), estilo(cy)
+                # vacía de los dos lados y sin relleno en ninguno: el formato de letra no se ve
+                if vx is None and vy is None and not ex["relleno"] and not ey["relleno"] and ex != ey:
+                    invisibles.append(cx.coordinate); continue
                 if vx != vy or ex != ey:
                     dif.append({"celda": cx.coordinate, "generada": [vx, ex] if ex != ey else vx, "referencia": [vy, ey] if ex != ey else vy})
                 else:
@@ -40,6 +43,7 @@ def comparar(a, b):
         mx, my = meta(x), meta(y)
         out["diferencias"][nombre] = dif
         out["iguales"][nombre] = iguales
+        out.setdefault("vacias_con_formato_de_letra_distinto", {})[nombre] = invisibles
         out.setdefault("estructura", {})[nombre] = {"igual": mx == my, "generada": mx, "referencia": my}
     print(json.dumps(out, ensure_ascii=False, default=str))
 
