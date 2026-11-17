@@ -25,3 +25,4 @@ supabase/04_primer_admin.sql
 # salidas sueltas del banco de pruebas
 pruebas/*.txt
 pruebas/salida-capturas/
+pruebas/salida-planillas/

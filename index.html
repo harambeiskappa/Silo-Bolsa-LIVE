@@ -239,8 +239,22 @@ div.card{padding:16px 18px} div.card>h2{margin-bottom:6px}
 
 /* ── celular: se adapta sobre lo mismo ──
    barra inferior de 5 secciones, tablas como listas, paneles laterales abajo */
+/* fase 5: planillas y carga a mano con el formato del papel */
+.plbox{margin-top:16px;padding-top:14px;border-top:1px solid var(--borde)}
+.plsel{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-end}
+.plren{display:flex;flex-direction:column;gap:3px;margin:0}
+.plren input{width:84px}
+.dos{display:flex;gap:16px;align-items:flex-start}
+.dos>table{flex:1;min-width:0}
+table.mano{border-collapse:collapse;width:100%}
+table.mano th{font-size:11px;text-align:left;padding:4px 6px}
+table.mano td{padding:2px 4px;border-top:1px solid var(--borde)}
+table.mano td.n{width:36px;text-align:center;font-weight:600;color:var(--tinta2)}
+table.mano input{width:100%;min-height:44px}
+table.mano.hum input{min-width:64px}
 @media (max-width:760px){
   .alerta b{white-space:normal}
+  .dos{flex-direction:column;gap:0}
   header.top{padding:8px 14px;gap:10px;min-height:52px}
   header.top .sep{display:none}
   .quien{font-size:12px}
@@ -358,7 +372,7 @@ const CAL = {
      dos pesadas seguidas que difieren en más de 1 g quieren decir que la
      muestra seguía perdiendo agua → el %MS es una cota superior.
    · TOL_CERRADO_M = 0,5 m: la resolución de la medición. El odómetro lee
-     de a 0,1 m y medir "de la mitad del triángulo a la mitad del otro" mueve
+     de a 0,1 m y medir "de la mitad del triángulo de una punta a la mitad del otro" mueve
      unos decímetros por punta. Se usa para dos cosas:
        - proponer correspondencias: un cerrado "mide lo mismo" si cambió ±0,5 m;
        - el nivel del aviso cuando un bolsón que no está en armado crece:
@@ -907,13 +921,25 @@ function kgMsAct(b){
 }
 /* %MS que DEBERÍA dar la dieta. Si ese día faltó un ingrediente (p. ej.
    no había harina de germen), se calcula sin él, re-proporcionando el resto. */
+/* Para el teórico de la dieta, una lectura cuenta solo si llegó a peso
+   constante (sí confirmado). Si no, se usa el de casa, y se dice. */
+function msParaTeorico(k){
+  const v = msVigente(k);
+  if(v.medido && v.lectura && v.lectura.peso_constante!==true){
+    const a = D.alimentos[k];
+    return { pct:a?n(a.ms_pct):null, medido:false, fecha:null, cota:v.cota, origen:"valor de casa",
+             porque:`la lectura del ${dmy(v.fecha)} no confirma peso constante (una sola pesada o solo el porcentaje): se usa el de casa` };
+  }
+  if(!v.medido && v.cota) v.porque = `la muestra del ${dmy(v.cota.fecha)} no llegó a peso constante (${txtMs(v.cota)}): se usa el de casa`;
+  return v;
+}
 function msDietaTeorico(faltantes){
   const sin = new Set(faltantes||[]);
   const p=(D.dieta&&D.dieta.proporciones)||{};
   let suma=0, tot=0, faltan=[], medidos=0;
   Object.entries(p).forEach(([k,pc])=>{
     if(sin.has(k)) return;
-    const v=msVigente(k); tot+=pc;
+    const v=msParaTeorico(k); tot+=pc;
     if(v.pct===null) faltan.push(k); else { suma+=pc*v.pct/100; if(v.medido) medidos++; }
   });
   if(!tot||faltan.length) return null;
@@ -1190,6 +1216,7 @@ function tarjetaMs(){
     ${falt.length?`El teórico sin ${esc(nomFalt)} se usa solo para comparar esa muestra; la MS por día usa la fórmula completa
     (${teoF?f(teoF.pct,1)+" %":"s/d"} sobre ${kmin===null?"s/d":f(kmin/1000,0)}–${kmax===null?"s/d":f(kmax/1000,0)} t tal cual).`
       :`MS por día con la fórmula completa sobre ${kmin===null?"s/d":f(kmin/1000,0)}–${kmax===null?"s/d":f(kmax/1000,0)} t tal cual.`}
+    ${Object.keys(D.dieta.proporciones||{}).map(k=>{ const v=msParaTeorico(k); return v.porque?` El teórico usa el %MS de casa de ${esc(((D.alimentos[k]||{}).nombre||k).toLowerCase())} (${v.pct===null?"s/d":f(v.pct,0)+" %"}): ${esc(v.porque)}.`:""; }).join("")}
     ${desv!==null&&Math.abs(desv)>3&&cota&&desv<0?" La muestra da al menos "+f(Math.abs(desv),1)+" puntos menos que el teórico: repetir la pesada hasta peso constante antes de tocar nada.":""}</div>
     <details class="hist" style="padding:0 18px 10px"><summary>Ingredientes, %MS vigente y origen</summary>${tablaIngredientes()}</details></section>`;
   return h;
@@ -1197,7 +1224,7 @@ function tarjetaMs(){
 function tablaIngredientes(){
   const sens = sensibilidad([]);
   return `<table class="resp"><thead><tr><th>Ingrediente</th><th class="r">% dieta</th><th class="r">%MS</th><th>De dónde sale</th><th class="r">1 pt mueve</th></tr></thead><tbody>
-    ${sens.map(s=>{ const a=D.alimentos[s.k]||{}, v=msVigente(s.k);
+    ${sens.map(s=>{ const a=D.alimentos[s.k]||{}, v=msParaTeorico(s.k);
       return `<tr><td data-l="Ingrediente"><b>${esc(a.nombre||s.k)}</b></td><td data-l="% dieta" class="num">${f(s.pct,0)} %</td>
         <td data-l="%MS" class="num">${v.pct===null?SD:f(v.pct,1)+" %"}</td>
         <td data-l="Origen" class="src">${v.medido?`medido el ${dmy(v.fecha)} · ${esc(v.origen)}`:`<span class="sd">valor de casa, sin medir</span>`}${v.cota?`<br>Lectura del ${dmy(v.cota.fecha)}: ${esc(txtMs(v.cota))}, es una cota y no se usa como valor.`:""}</td>
@@ -1322,14 +1349,14 @@ let cargaModo = null;   // null = elegir · "mano"
 function pasos(n){ return `<nav class="pasos" aria-label="Pasos">${["Subir archivo","Revisar","Guardar"].map((t,i)=>
   `<span class="${i+1===n?"on":""}">${i+1} · ${t}${i+1<n?" ✓":""}</span>`).join("")}</nav>`; }
 function vCarga(){
-  const planillas = `<div class="bar" style="margin-top:14px">
-        <button id="btnPlanilla">Imprimir planilla en blanco</button>
-        <button id="btnPlanillaXls">Descargar planilla en Excel</button>
-        <label class="src" style="display:flex;gap:6px;align-items:center">Renglones
-          <input id="plRenglones" type="number" min="10" max="120" step="5" value="40" style="width:76px"></label>
-      </div>
-      <p class="hint" style="margin:9px 0 0">La planilla sale <b>vacía</b>: los bolsones se numeran en el campo, en el
-      orden del recorrido. La app propone después qué bolsón es cada uno.</p>`;
+  const planillas = `<div class="plbox"><h2 style="margin:0 0 4px;font-size:14px">Planillas para el campo</h2>
+      <p class="hint" style="margin:0 0 8px">Las dos piden lo mismo: por alimento, el N°, los metros que quedan y una nota solo si pasa algo; y la humedad
+      del silo y de la dieta. Salen <b>en blanco</b>: el recorrido define el inventario y la app propone después qué bolsón es cada renglón.</p>
+      ${selectorPlanillas()}
+      <div class="bar" style="margin-top:10px">
+        <button id="btnPlanilla">Imprimir planilla (una hoja A4)</button>
+        <button id="btnPlanillaXls">Bajar planilla en Excel</button>
+      </div></div>`;
   if(!esAdmin())
     return avisoBorrador() + cabeza({eyebrow:"Carga", h1:"Nueva medición"}) + `<section class="card pad">
       <p class="hint">Cargar mediciones lo hace el admin (Iñaki). Tu rol es <b>${esc(ROLES[rol()])}</b>: podés ver todo
@@ -1342,58 +1369,12 @@ function vCarga(){
           <span>Excel (.xlsx) o CSV. Podés elegir varios archivos juntos: el de mediciones y el de materia seca.
           La app lee, propone qué bolsón es cada renglón y vos confirmás.</span></button>
         <button class="opcion" id="opMano"><b>Cargar a mano</b>
-          <span>Bolsón por bolsón en la pantalla. Sirve si son pocos o para corregir algo puntual.</span></button>
+          <span>Con el mismo formato que la planilla de papel: N°, metros y nota por alimento, y la humedad. Para tipear desde el papel sin mouse.</span></button>
       </div>
       <input type="file" id="fPlanilla" accept=".xlsx,.csv" multiple style="display:none">
       ${planillas}</section>`;
   }
-  const lista = recorrido();
-  let h = avisoBorrador() + pasos(1) + cabeza({eyebrow:"Carga a mano", h1:"Nueva medición a mano",
-    sub:"Escribí los metros que quedan sin consumir. El que no midas dejalo en blanco: queda en s/d y no se guarda nada para ese bolsón.",
-    acc:`<button id="volverModo">← Cambiar forma de cargar</button>`});
-  h += `<section class="card"><div class="pad frow" style="margin:0">
-      <div><span class="lbl">Fecha</span><input type="date" id="cFecha" value="${cargaBuf.__fecha||hoy()}"></div>
-      <div><span class="lbl">Medido por</span><input id="cQuien" placeholder="quién midió" value="${esc(cargaBuf.__quien||"")}"></div>
-    </div>`;
-  if(!lista.length) h += `<p class="pad sub">No hay bolsones en la base. Para el primer lote, subí la planilla.</p>`;
-  let filaAct = "";
-  lista.forEach(b=>{
-    const u=ultimaMed(b.id), fila=b.ubicacion.fila||"A";
-    if(fila!==filaAct){ filaAct = fila;
-      h += `<div class="pl-pasada"><span>Pasada ${esc(fila)} · ${fila==="A"?"del galpón al fondo":"del fondo al galpón"}</span><span></span></div>`; }
-    const est = cargaBuf["est:"+b.id] || b.estado;
-    h += `<div class="crow">
-      <div class="lft"><div class="idl"><span class="cuad" style="background:${b.estado==="terminado"?"#b0b8c6":colorAli(b.alimento)}"></span>${esc(et(b))}</div>
-        <div class="sub">${esc(ali(b).nombre)} · ${u?`última ${f(u.metros_restantes,1)} m el ${dmy(u.fecha)}`:"nunca medido"}</div></div>
-      <select class="e" data-est="${esc(b.id)}" aria-label="Estado de ${esc(et(b))}">
-        ${Object.entries(ESTADOS).map(([k,v])=>`<option value="${k}"${est===k?" selected":""}>${v}</option>`).join("")}</select>
-      <input class="m" data-m="${esc(b.id)}" type="text" inputmode="decimal" placeholder="s/d" aria-label="Metros de ${esc(et(b))}" value="${esc(cargaBuf[b.id]??"")}">
-    </div>`;
-  });
-  h += `</section>`;
-  h += `<section class="card"><details ${Object.keys(cargaBuf).some(k=>k.startsWith("ms:"))?"open":""} style="padding:0 18px 12px">
-    <summary>Materia seca del día</summary>
-    <p class="hint">Anotá el peso inicial y cada pesada como <b>minuto:gramos</b> (ej. <span class="mono">10:73 15:61</span>).
-    Si las dos últimas difieren en más de ${PESO_CONSTANTE_G} g, no llegó a peso constante y queda como cota («≤»). Si solo tenés el porcentaje, ponelo en «% MS».</p>`;
-  ingsDieta().concat(["__dieta"]).forEach(k=>{
-    const a = k==="__dieta" ? {nombre:"Dieta mezclada"} : D.alimentos[k]; if(!a) return;
-    const v = cargaBuf["ms:"+k]||{};
-    const calc = calcMs({pesoIni:numeroDe(v.ini), pesadas:pesadasDeTexto(v.pes), pctArchivo:numeroDe(v.pct)});
-    h += `<div class="crow" style="flex-wrap:wrap;padding-left:0;padding-right:0">
-      <div class="lft" style="min-width:150px"><div class="idl"><span class="cuad" style="background:${k==="__dieta"?"var(--navy)":colorAli(k)}"></span>${esc(a.nombre)}</div>
-        <div class="sub">${calc.pct!==null?`${calc.constante===false?"≤ ":""}${fNum(calc.pct)} % · ${esc(calc.por)}`:
-          (k==="__dieta"?(msDietaMedido()?"última "+esc(txtMs(msDietaMedido())):"nunca medida"):(msVigente(k).medido?"vigente "+f(msVigente(k).pct,1)+" %":"sin medir"))}</div></div>
-      ${k!=="__dieta"?`<select class="e" data-msk="${k}" data-msc="origen" aria-label="Origen"><option value="">origen</option>
-        ${Object.entries(ORIGEN_MS).map(([ok,ov])=>`<option value="${ok}"${v.origen===ok?" selected":""}>${ov}</option>`).join("")}</select>
-      <input class="e" data-msk="${k}" data-msc="cual" style="width:80px" placeholder="cuál" value="${esc(v.cual||"")}">`:""}
-      <input class="e mono" data-msk="${k}" data-msc="ini" style="width:80px" inputmode="decimal" placeholder="g inic." value="${esc(v.ini||"")}">
-      <input class="e mono" data-msk="${k}" data-msc="pes" style="width:120px" placeholder="min:g …" value="${esc(v.pes||"")}">
-      <input class="e mono" data-msk="${k}" data-msc="pct" style="width:76px" inputmode="decimal" placeholder="% MS" value="${esc(v.pct||"")}">
-      ${k==="__dieta"?`<input class="e" data-msk="${k}" data-msc="nota" style="flex:1;min-width:160px" placeholder="nota (ej.: no tenía harina de germen)" value="${esc(v.nota||"")}">`:""}
-    </div>`;
-  });
-  h += `</details></section><div class="sticky-save"><button class="p" id="btnGuardar" style="width:100%">Revisar antes de guardar</button></div>`;
-  return h;
+  return vCargaMano();
 }
 
 /* ══════════════════ REVISIÓN ══════════════════════════════════════════ */
@@ -1415,9 +1396,11 @@ function vRevision(){
   const faltDec = st.faltantes.filter(x=>!x.decision).length;
   const nMs = st.ms.filter(m=>m.importar && m.diag.nivel==="listo" && m.accion!=="igual").length;
   const errMs = st.ms.filter(m=>m.importar && m.diag.nivel==="error").length;
+  const revMs = st.ms.filter(m=>m.importar && m.diag.nivel==="revisar").length;
   const bloqueos = [];
   if(err) bloqueos.push(`${err} renglón(es) con problema (corregilos o destildalos)`);
   if(errMs) bloqueos.push(`${errMs} lectura(s) de MS con problema`);
+  if(revMs) bloqueos.push(`${revMs} lectura(s) de MS para revisar`);
   if(rev) bloqueos.push(`${rev} renglón(es) sin decidir`);
   if(faltDec) bloqueos.push(`${faltDec} bolsón(es) que no vinieron sin respuesta`);
   if(reemp && !String(st.motivo||"").trim()) bloqueos.push("falta el motivo de los reemplazos");
@@ -1432,6 +1415,10 @@ function vRevision(){
       <label class="lbl" style="margin:0">Fecha de la medición<input type="date" id="revFecha" value="${esc(st.fecha)}" style="display:block;font-family:var(--mono)"></label>
       <label class="lbl" style="margin:0">Medido por<input id="revQuien" value="${esc(st.quien||"")}" placeholder="s/d" style="display:block;width:170px"></label>
     </div></div>`;
+  const sm = Object.entries(st.sinMedir||{}), smTot = sm.reduce((a,[,v])=>a+v,0);
+  h += `<p class="hint" style="margin:0">Formato detectado: <b>${esc((st.formato||{}).txt||"planilla")}</b>.${smTot?` Sin medir: ${smTot} renglón(es) sin metros ni nota
+    (${sm.map(([k,v])=>`${esc((D.alimentos[k]||{}).nombre||k)} ${v}`).join(" · ")}): no generan medición.`:""}</p>`;
+  if(st.avisoFecha) h += `<div class="alerta">${esc(st.avisoFecha)}</div>`;
   if(st.fechaVarias) h += `<div class="alert e">El archivo trae renglones con fechas distintas (${st.fechaVarias.map(dmy).join(", ")}). Un lote es una sola fecha: separalo o corregí la fecha arriba.</div>`;
   if(!st.quien) h += `<p class="hint" style="margin:0">Sin «medido por»: queda s/d. Si fue Silvana, escribilo arriba.</p>`;
   const rec = st.recuento||{};
@@ -1461,7 +1448,7 @@ function vRevision(){
     const g = grupo(x);
     if(filtroRev!=="todos" && g!==filtroRev && !(filtroRev==="confirmar" && revEditando[i])) return;
     visibles++;
-    const nv = x.diag.nivel, man = st.tipo==="manual";
+    const nv = x.diag.nivel, man = false;   // a mano también se propone la correspondencia
     const cands = x.alimento ? candidatos(x.alimento) : [];
     const opAsig = `<option value="">— revisar: sin decidir —</option><option value="nuevo">Bolsón nuevo</option>`
       + cands.map(c=>{ const r=medRef(c, st.fecha);
@@ -1470,7 +1457,7 @@ function vRevision(){
     h += `<tr class="${nv==="error"?"error":nv==="revisar"?"revisar":""}" data-rev="${i}">
       <td data-l="Ren." class="mono txt-gris">${x.renglon}</td>
       <td data-l="En la hoja"><b>${esc(x.etiqueta)||'<i class="sd">sin etiqueta</i>'}</b><div class="src">${esc((D.alimentos[x.alimento]||{}).nombre||x.aliTxt||"alimento s/d")}${x.estado?" · "+esc(ESTADOS[x.estado]):""}${x.importar?"":" · no se carga"}</div>
-        <button class="link" data-editar="${i}" style="padding:0">${revEditando[i]||nv==="error"?"Cerrar edición":"Editar"}</button></td>
+        <button class="link" data-editar="${i}" style="padding:0">${revEditando[i]||nv==="error"||x.revBase?"Cerrar edición":"Editar"}</button></td>
       <td data-l="Metros" class="num ${marcaDif?"txt-alerta":""}">${x.metros===null||x.metros===undefined?(x.metrosTxt?esc(x.metrosTxt):SD):fNum(x.metros)}</td>
       <td data-l="Es el bolsón">${man ? `<b>${esc(et(bol(x.asignado)))}</b>` : (x.importar && !x.errBase ? `<select data-rv="asignado" aria-label="Bolsón para el renglón ${x.renglon}" style="max-width:220px">${opAsig}</select>` : `<span class="sd">—</span>`)}</td>
       <td data-l="Confianza">${x.propuesta ? `<span class="conf ${x.propuesta.conf}">${x.propuesta.auto?"sin candidatos":x.propuesta.conf}</span>` : man ? `<span class="conf alta">a mano</span>` : ""}</td>
@@ -1480,17 +1467,19 @@ function vRevision(){
         ${x.diag.marcas.map(m=>`<div class="marca txt-alerta" style="font-weight:600">${m}</div>`).join("")}
         ${(x.diag.infos||[]).map(m=>`<div class="marca src">${esc(m)}</div>`).join("")}</td>
       <td data-l="Confirmo" style="text-align:center">${!man && x.asignado && x.importar && !x.errBase ? `<label class="tap"><input type="checkbox" data-rv="confirmado" ${x.confirmado?"checked":""} aria-label="Confirmo el renglón ${x.renglon}"></label>` : ""}</td></tr>`;
-    if(revEditando[i] || nv==="error")
+    if(revEditando[i] || nv==="error" || x.revBase)
       h += `<tr class="editor" data-rev="${i}"><td colspan="7" class="solo"><div class="bar">
         <label class="tap" title="Cargar este renglón"><input type="checkbox" data-rv="importar" ${x.importar?"checked":""}> cargar</label>
         <label class="lbl" style="margin:0">Etiqueta<input data-rv="etiqueta" value="${esc(x.etiqueta)}" style="display:block;width:90px"></label>
         <label class="lbl" style="margin:0">Alimento<select data-rv="aliTxt" style="display:block">${opAli}</select></label>
         <label class="lbl" style="margin:0">Metros<input data-rv="metrosTxt" value="${esc(x.metrosTxt)}" placeholder="s/d" style="display:block;width:90px;text-align:right;font-family:var(--mono)"></label>
-        <label class="lbl" style="margin:0">Estado<select data-rv="estadoTxt" style="display:block">${opEst}</select></label></div></td></tr>`;
+        <label class="lbl" style="margin:0">Estado<select data-rv="estadoTxt" style="display:block">${opEst}</select></label>
+        <label class="lbl" style="margin:0;flex:1;min-width:160px">Nota<input data-rv="nota" value="${esc(x.nota||"")}" style="display:block;width:100%"></label>
+        ${x.notaProp||x.notaNo?`<label class="tap"><input type="checkbox" data-rv="notaNo" ${x.notaNo?"checked":""}> no usar lo que propone la nota</label>`:""}</div></td></tr>`;
   });
   if(!visibles) h += `<tr><td colspan="7" class="sub solo">Nada en este filtro.</td></tr>`;
   h += `</tbody></table></div>
-    ${st.tipo==="planilla"?`<div class="card-f">La propuesta suma puntos por posición en el recorrido (igual 3, a uno 1), metros compatibles con el estado
+    ${true?`<div class="card-f">La propuesta suma puntos por posición en el recorrido (igual 3, a uno 1), metros compatibles con el estado
       (3: un cerrado mide lo mismo ±${fNum(TOL_CERRADO_M)} m, uno en uso solo baja, uno en armado solo sube), estado anotado (2) y etiqueta (2).
       Alta: ${PUNTOS_ALTA}+ puntos y ${VENTAJA_ALTA} de ventaja; media: ${PUNTOS_MEDIA}+ y ${VENTAJA_MEDIA}. Nada se guarda sin el tilde.</div>`:""}</section>`;
 
@@ -1532,10 +1521,12 @@ function vRevision(){
     h += `<section class="card"><div class="card-h"><h2>Materia seca</h2></div><table><tbody>`;
     st.ms.forEach((m,i)=>{
       h += `<tr data-ms="${i}"><td class="solo"><label class="tap" style="justify-content:flex-start"><input type="checkbox" data-mv="importar" ${m.importar?"checked":""}>
-          <b>${esc(m.nombre)}</b></label><div class="src">${esc(ORIGEN_MS[m.origen]||m.origenTxt||"origen s/d")}${m.dieta?"":" · cuál: "+(m.cual?esc(m.cual):"s/d")}</div></td>
+          <b>${esc(m.nombre)}</b></label><div class="src">${esc(ORIGEN_MS[m.origen]||m.origenTxt||"de dónde: s/d")}${m.dieta||m.origen==="mixer"?"":" · cuál: "+(m.cual?esc(m.cual):"s/d")}</div>
+          ${!m.dieta && m.importar && (!m.origen || m.elegido) ? `<label class="lbl" style="margin:6px 0 0">De dónde salió<select data-mv="origen" style="display:block">
+            <option value="">— elegí —</option>${Object.entries(ORIGEN_MS).map(([k,v])=>`<option value="${k}"${m.origen===k?" selected":""}>${esc(v)}</option>`).join("")}</select></label>` : ""}</td>
         <td class="num">${m.pesoIni?f(m.pesoIni):"s/d"}${(m.pesadas||[]).map(p=>` → ${f(p.g)}`).join("")} g</td>
         <td class="num"><b>${m.calc&&m.calc.pct!==null?(m.calc.constante===false?"≤ ":"")+fNum(m.calc.pct)+" %":SD}</b></td></tr>
-        <tr data-ms="${i}"><td colspan="3" class="solo"><div class="marca" style="color:${m.diag.nivel==="error"?"var(--mal)":"var(--tinta2)"}">${m.diag.lin.map(esc).join("<br>")}</div>
+        <tr data-ms="${i}"><td colspan="3" class="solo"><div class="marca" style="color:${m.diag.nivel==="error"?"var(--mal)":m.diag.nivel==="revisar"?"var(--alerta)":"var(--tinta2)"}">${m.diag.lin.map(esc).join("<br>")}</div>
         ${m.nota?`<div class="marca src">Nota: «${esc(m.nota)}»</div>`:""}
         ${m.dieta?`<div class="marca"><b>¿Qué faltaba en la dieta ese día?</b> El teórico de esa muestra se calcula sin eso.
           <div class="bar" style="margin-top:6px">${ingsDieta().map(k=>`<label class="chip"><input type="checkbox" data-falt="${k}" ${m.faltantes.includes(k)?"checked":""}> ${esc((D.alimentos[k]||{}).nombre||k)}</label>`).join("")}</div>
@@ -2138,6 +2129,17 @@ async function leerXlsx(buffer){
   if(z["xl/_rels/workbook.xml.rels"])
     [...xmlDe(z["xl/_rels/workbook.xml.rels"]).getElementsByTagName("Relationship")]
       .forEach(r=> rels[r.getAttribute("Id")] = r.getAttribute("Target"));
+  // formatos de hora: si Silvana escribe 67:30 en Excel, Excel lo guarda como una hora
+  // (2,8125 días). Se devuelve «67:30» para que metrosDe lo lea como metros y centímetros.
+  const esHora = [];
+  if(z["xl/styles.xml"]){
+    const sx = xmlDe(z["xl/styles.xml"]), cods = {};
+    [...sx.getElementsByTagName("numFmt")].forEach(f=>cods[f.getAttribute("numFmtId")] = f.getAttribute("formatCode")||"");
+    const xfs = sx.getElementsByTagName("cellXfs")[0];
+    if(xfs) [...xfs.getElementsByTagName("xf")].forEach((x,i)=>{ const id = +x.getAttribute("numFmtId");
+      const c = (cods[id]||"").replace(/"[^"]*"|\[[^\]]*\]/g, m=>/^\[h+\]$/i.test(m)?"h":"");
+      esHora[i] = [18,19,20,21,45,46,47].includes(id) || (/h/i.test(c) && !/[dy]/i.test(c)); });
+  }
   const wb = xmlDe(z["xl/workbook.xml"]);
   const hojas = {};
   [...wb.getElementsByTagName("sheet")].forEach((s,i)=>{
@@ -2148,12 +2150,12 @@ async function leerXlsx(buffer){
     ruta = ruta.replace(/^\/?xl\//,"").replace(/^\//,"");
     const bytes = z["xl/"+ruta] || z[`xl/worksheets/sheet${i+1}.xml`];
     if(!bytes) return;
-    hojas[nom] = filasDeHoja(xmlDe(bytes), compartidos);
+    hojas[nom] = filasDeHoja(xmlDe(bytes), compartidos, esHora);
   });
   return hojas;
 }
 
-function filasDeHoja(doc, compartidos){
+function filasDeHoja(doc, compartidos, esHora){
   const filas = [];
   [...doc.getElementsByTagName("row")].forEach(row=>{
     const idx = parseInt(row.getAttribute("r")||"0",10)-1;
@@ -2170,6 +2172,8 @@ function filasDeHoja(doc, compartidos){
       } else {
         const vEl = c.getElementsByTagName("v")[0];
         v = vEl ? vEl.textContent : "";
+        if(v!=="" && esHora && esHora[+c.getAttribute("s")] && !isNaN(+v)){
+          const min = Math.round(+v*1440); v = `${Math.floor(min/60)}:${String(min%60).padStart(2,"0")}`; }
       }
       celdas[ci] = String(v).trim();
     });
@@ -2322,7 +2326,7 @@ function proponerFaltantes(nota){
   return out;
 }
 
-function analizarPlanilla(hojas, fuente){
+function analizarViejo(hojas, fuente){
   let med = buscarHoja(hojas,"Mediciones","Medicion");
   if(!med){ med = Object.values(hojas).find(h=>h && h[0] && mapaColumnas(h[0],{id:["etiqueta","bolson","id"]}).id>=0)
                   || Object.values(hojas)[0]; }
@@ -2348,42 +2352,9 @@ function analizarPlanilla(hojas, fuente){
   }
   marcarRepetidos(filas);
 
-  // materia seca
-  const hms = buscarHoja(hojas,"Materia seca","MateriaSeca","Humedad","MS"), ms = [];
-  if(hms && hms.length>1 && hms!==med){
-    const enc = hms[0];
-    const c = mapaColumnas(enc, {alimento:["alimento","muestra"], pct:["msh","ms","porcentaje"],
-                                 origen:["origen"], cual:["cual","cuál"], ini:["pesoinicial","inicial"],
-                                 nota:["nota","observ"], falt:["falto","faltaron","faltantes"]});
-    const fijas = [], pares = {};
-    enc.forEach((h,i)=>{
-      const k = norm(h); let m;
-      if((m = k.match(/^peso(\d+)min/))) fijas.push({i, min:+m[1]});
-      else if((m = k.match(/^min(\d)$/))) (pares[m[1]]=pares[m[1]]||{}).min=i;
-      else if((m = k.match(/^g(\d)$/))) (pares[m[1]]=pares[m[1]]||{}).g=i;
-    });
-    for(let r=1;r<hms.length;r++){
-      const fl=hms[r]||[]; const cel=i=> i>=0 ? String(fl[i]==null?"":fl[i]).trim() : "";
-      const nom=cel(c.alimento);
-      if(!nom) continue;
-      const pesadas = fijas.map(x=>({min:x.min, g:numeroDe(cel(x.i))})).filter(p=>p.g!==null&&p.g!==undefined);
-      Object.values(pares).forEach(p=>{ const mi=numeroDe(cel(p.min)), g=numeroDe(cel(p.g));
-        if(n(mi)!==null && n(g)!==null) pesadas.push({min:mi, g}); });
-      const pctTxt = cel(c.pct), pesoIni = numeroDe(cel(c.ini));
-      if(!pctTxt && !pesadas.length) continue;
-      const dieta = norm(nom).includes("dieta");
-      const nota = cel(c.nota);
-      const fal = {};
-      if(dieta){
-        Object.assign(fal, proponerFaltantes(nota));
-        cel(c.falt).split(/[,;·]/).forEach(x=>{ const k=alimentoDe(x,true); if(k) fal[k]=`la columna «faltó» dice «${cel(c.falt)}»`; });
-      }
-      ms.push({ id:uuid(), nombre:nom, alimento:dieta?null:alimentoDe(nom,true), dieta, pctArchivo:numeroDe(pctTxt),
-                pesoIni: pesoIni===undefined?null:pesoIni, pesadas,
-                origen: origenMsDe(cel(c.origen)) ?? (dieta?"mixer":null), origenTxt:cel(c.origen),
-                cual:cel(c.cual), nota, faltantes:Object.keys(fal), porQueFaltantes:fal, importar:true });
-    }
-  }
+  // materia seca: hoja «Materia seca» (vieja) o «Humedad»
+  const hms = buscarHoja(hojas,"Materia seca","MateriaSeca","Humedad","MS");
+  const ms = leerMs(hms && hms!==med ? hms : null, false);
   // recuento contado a mano + fecha y medidor de la hoja Recuento
   const hrec = buscarHoja(hojas,"Recuento"), recuento = {};
   let fechaRec = null, quienRec = "";
@@ -2511,15 +2482,23 @@ function procesarStaging(){
   const st = staging, fecha = st.fecha;
   marcarRepetidos(st.filas);
   st.filas.forEach(fl=>{
-    fl.metros = numeroDe(fl.metrosTxt);
+    const mt = metrosDe(fl.metrosTxt);
+    fl.metros = mt.v; fl.metrosComo = mt.como||null;
     fl.alimento = alimentoDe(fl.aliTxt);
     fl.estado = estadoDe(fl.estadoTxt);
+    // la nota propone; si la columna Estado dice algo, manda la columna
+    fl.notaProp = fl.notaNo ? null : propuestaNota(fl.nota);
+    if(fl.notaProp && fl.notaProp.tipo==="estado"){ if(fl.estadoTxt) fl.notaProp = null; else fl.estado = fl.notaProp.estado; }
+    fl.revBase = fl.metros===undefined ? `No entiendo «${fl.metrosTxt}» como metros${mt.por?" ("+mt.por+")":""}. Escribí el número (ej. 67,8) o dejalo vacío si no se midió: nunca se toma como 0.`
+      : (fl.metros!==null && fl.metros>METROS_MAX) ? `${fNum(fl.metros)} m es más que el largo de un bolsón (la planilla acepta hasta ${METROS_MAX} m): revisá el número.`
+      : (fl.notaProp && fl.notaProp.tipo==="sin_medicion" && fl.metros!==null) ? `La nota dice «${fl.notaProp.palabra}» pero el renglón trae ${fl.metrosTxt} m: dejá uno de los dos.`
+      : null;
     fl.lectura = norm(fl.lecturaTxt)==="dudosa" ? "dudosa" : "ok";
     fl.vacia = !fl.etiqueta && !fl.metrosTxt && !fl.aliTxt && !fl.estadoTxt;
     fl.errBase = fl.vacia ? null
+      : fl.errExtra ? fl.errExtra
       : !fl.etiqueta ? "Tiene datos pero no tiene etiqueta (el número que le puso quien midió). No se puede cargar."
       : fl.repetido ? `«${fl.etiqueta}» aparece en los renglones ${fl.repetido.join(" y ")}. Dejá uno solo.`
-      : fl.metros===undefined ? `No entiendo «${fl.metrosTxt}» como metros.`
       : (fl.aliTxt && fl.alimento===undefined) ? `«${fl.aliTxt}» no es ninguno de los alimentos que se embolsan.`
       : !fl.alimento ? "Falta el alimento: sin él no se puede buscar a qué bolsón corresponde."
       : (fl.estadoTxt && fl.estado===undefined) ? `No entiendo el estado «${fl.estadoTxt}». Va C, U, A, T o X.`
@@ -2527,19 +2506,19 @@ function procesarStaging(){
       : null;
     fl.propuesta = null;
   });
-  if(st.tipo==="planilla") proponer();
+  proponer();     // también a mano: la carga a mano es la misma lista numerada que el papel
   st.filas.forEach(fl=>{
     if(fl.tocado || !fl.propuesta) return;
     fl.asignado = fl.propuesta.auto ? "nuevo" : (fl.propuesta.conf==="baja" ? "" : fl.propuesta.id);
     fl.confirmado = !!fl.propuesta.auto;
   });
   // bolsones de la base que no recibieron ningún renglón
-  if(st.tipo==="planilla"){
+  {
     const usados = new Set(st.filas.filter(fl=>fl.importar && !fl.errBase && fl.asignado && fl.asignado!=="nuevo").map(fl=>fl.asignado));
     const antes = new Map((st.faltantes||[]).map(x=>[x.id,x.decision]));
     st.faltantes = D.bolsones.filter(b=>b.estado!=="retirado" && b.estado!=="terminado" && !usados.has(b.id))
       .map(b=>({id:b.id, decision:antes.get(b.id)||""}));
-  } else st.faltantes = [];
+  }
   // diagnóstico de cada renglón
   const elegidos = {};
   st.filas.forEach(fl=>{ if(fl.importar && fl.asignado && fl.asignado!=="nuevo") (elegidos[fl.asignado]=elegidos[fl.asignado]||[]).push(fl.renglon); });
@@ -2553,6 +2532,7 @@ function diagnosticar(fl, elegidos){
   if(fl.vacia) return fl.diag = {nivel:"vacio", lin:["Renglón vacío, se ignora."], marcas};
   if(!fl.importar) return fl.diag = {nivel:"fuera", lin:["Destildado: no se carga."], marcas};
   if(fl.errBase) return fl.diag = {nivel:"error", lin:[fl.errBase], marcas};
+  if(fl.revBase) return fl.diag = {nivel:"revisar", lin:[fl.revBase], marcas};
   if(!fl.asignado) return fl.diag = {nivel:"revisar", lin:["Revisar: elegí a qué bolsón corresponde o marcá «bolsón nuevo»."], marcas};
   if(fl.asignado!=="nuevo" && elegidos[fl.asignado] && elegidos[fl.asignado].length>1)
     return fl.diag = {nivel:"error", lin:[`${et(bol(fl.asignado))} está elegido en los renglones ${elegidos[fl.asignado].join(" y ")}: un bolsón, un renglón.`], marcas};
@@ -2595,8 +2575,12 @@ function diagnosticar(fl, elegidos){
       }
     }
   }
+  if(fl.metrosComo) infos.push(`Metros: ${fl.metrosComo} = ${fNum(fl.metros)} m.`);
+  const ln = lineaNota(fl);
+  if(ln) lin.push(ln);
   if(fl.lectura==="dudosa") marcas.push(`<b>Lectura dudosa</b> en la hoja${fl.nota?": «"+esc(fl.nota)+"»":""}. Se guarda marcada.`);
-  else if(fl.nota) marcas.push(`Nota: «${esc(fl.nota)}».`);
+  else if(fl.nota && !fl.notaProp) marcas.push(fl.metros===null ? `Nota: «${esc(fl.nota)}». Sin metros: queda como evento de nota del bolsón.`
+                                                               : `Nota: «${esc(fl.nota)}». Queda como nota de la medición.`);
   if(fl.asignado!=="nuevo" && !fl.confirmado)
     return fl.diag = {nivel:"revisar", lin:["Falta confirmar la correspondencia."].concat(lin), marcas, infos};
   if(fl.asignado==="nuevo" && !fl.confirmado)
@@ -2607,13 +2591,17 @@ function diagnosticarMs(m){
   const c = calcMs(m); m.calc = c; m.reemplaza = null; m.accion = null;
   const lin = [];
   if(!m.importar){ m.diag = {nivel:"fuera", lin:["Destildada: no se carga."]}; return; }
+  if(m.sinNombre){ m.diag = {nivel:"error", lin:["Falta qué muestra es (Silo o Dieta): la fila tiene pesadas pero no tiene nombre."]}; return; }
   if(!m.dieta && !m.alimento){ m.diag = {nivel:"error", lin:[`No reconozco «${m.nombre}» como ingrediente.`]}; return; }
+  if(!m.dieta && !SE_MIDE_MS.includes(m.alimento)){ m.diag = {nivel:"revisar", lin:[`${(D.alimentos[m.alimento]||{}).nombre||m.nombre}: solo se mide silo y dieta (decisión del 17/11). Su %MS sigue con el valor de casa (Ajustes). Destildala para seguir.`]}; return; }
   if(c.pct===null || c.pct<=0 || c.pct>100){ m.diag = {nivel:"error", lin:["No hay un %MS válido (ni pesadas ni porcentaje)."]}; return; }
-  if(m.origen===undefined){ m.diag = {nivel:"error", lin:[`No entiendo el origen «${m.origenTxt}». Va B (bolsón), C (celda) o M (mixer).`]}; return; }
+  if(m.origen===undefined){ m.diag = {nivel:"error", lin:[`No entiendo el origen «${m.origenTxt}». Elegí de dónde salió: celda, bolsón o mixer.`]}; return; }
+  if(!m.origen && !m.dieta){ m.diag = {nivel:"error", lin:["La nota no dice de dónde salió la muestra (celda, bolsón o mixer): elegilo abajo. No se supone."]}; return; }
   lin.push(`${c.constante===false?"≤ ":""}${fNum(c.pct)} %: ${c.por}.`);
   if(c.desdePesadas && m.pctArchivo!==null && m.pctArchivo!==undefined && Math.abs(m.pctArchivo-c.pct)>0.5)
     lin.push(`⚠ La planilla dice ${fNum(m.pctArchivo)} % pero las pesadas dan ${fNum(c.pct)} %: se usa lo de las pesadas.`);
-  if(!m.cual && !m.dieta) lin.push(`De qué ${m.origen==="bolson"?"bolsón":"celda"} salió: s/d.`);
+  lin.push(`De dónde: ${(ORIGEN_MS[m.origen]||"s/d").toLowerCase()}${m.origenPor?" ("+m.origenPor+")":""}.`);
+  if(!m.cual && !m.dieta && m.origen!=="mixer") lin.push(`De qué ${m.origen==="bolson"?"bolsón":"celda"} salió: s/d.`);
   const prev = (D.calidad||[]).find(x=>!x.anulada && x.fecha===staging.fecha && x.tipo===(m.dieta?"dieta":"ingrediente")
                                          && (m.dieta || x.alimento===m.alimento));
   if(prev){
@@ -2674,7 +2662,7 @@ function confirmarImport(){
               nuevos:[], renumerar:[], estados:[], mediciones:[], calidad:[], revision:[], resumen:{} };
   const motivo = `Reimportación del ${dmy(st.fecha)}: ${String(st.motivo||"").trim()}`;
   const posSig = {};
-  const totales = {};
+  const totales = {}, eventos = [];
   st.filas.forEach(x=>{
     if(!x.importar || x.diag.nivel!=="listo") return;
     let id = x.asignado;
@@ -2691,12 +2679,18 @@ function confirmarImport(){
     }
     if(x.metros!==null && x.metros!==undefined && x.accion!=="igual"){
       p.mediciones.push({ id:x.idMed || (x.idMed = uuid()), bolson_id:id, metros:x.metros, etiqueta_planilla:x.etiqueta,
-        // en una carga a mano no hay hoja: el orden queda vacío (no se inventa)
-        orden_planilla: st.tipo==="manual" ? null : (x.orden!=null ? x.orden : x.renglon-1), estado_anotado:x.estado||"", lectura:x.lectura,
+        // a mano también es la lista numerada del papel: el orden es su N°
+        orden_planilla: x.orden!=null ? x.orden : (st.tipo==="manual" ? null : x.renglon-1), estado_anotado:x.estado||"", lectura:x.lectura,
         nota:x.nota||"", reemplaza_a:x.reemplaza||null, motivo:x.reemplaza?motivo:null,
         revision_marca: x.marcaDif || null });
       const t = totales[x.alimento] = totales[x.alimento]||{m:0,n:0}; t.m = +(t.m + x.metros).toFixed(2); t.n++;
     }
+    // la nota: rotura → evento de rotura; sin metros (o «no se pudo medir») → evento de nota con el texto
+    const pn = x.notaProp, deDonde = st.tipo==="manual" ? "carga a mano" : "planilla";
+    if(pn && pn.tipo==="evento") eventos.push({p_id:x.idEv||(x.idEv=uuid()), p_bolson:id, p_fecha:st.fecha, p_tipo:"rotura",
+      p_detalle:`${x.nota} (${deDonde} del ${dmy(st.fecha)}, renglón ${x.etiqueta})`});
+    else if(x.nota && x.metros===null && !(pn && pn.tipo==="estado")) eventos.push({p_id:x.idEv||(x.idEv=uuid()), p_bolson:id, p_fecha:st.fecha,
+      p_tipo:"nota", p_detalle:`${x.nota} (${deDonde} del ${dmy(st.fecha)}, renglón ${x.etiqueta})`});
     p.revision.push({ renglon:x.renglon, etiqueta:x.etiqueta, alimento:x.alimento, metros:x.metros, bolson_id:id,
       decision: x.asignado==="nuevo"?"nuevo":"vinculado", confianza: x.propuesta?x.propuesta.conf:"manual",
       propuesto: x.propuesta?x.propuesta.id:null, por: x.propuesta?x.propuesta.por:"cargado a mano",
@@ -2724,38 +2718,17 @@ function confirmarImport(){
     ms:p.calidad.length, reemplazos:p.mediciones.filter(m=>m.reemplaza_a).length,
     diferencias:p.mediciones.filter(m=>m.revision_marca==="diferencia_medicion").length,
     dentro_resolucion:p.mediciones.filter(m=>m.revision_marca==="dentro_resolucion").length,
-    dudosas:p.mediciones.filter(m=>m.lectura==="dudosa").length, totales };
+    dudosas:p.mediciones.filter(m=>m.lectura==="dudosa").length, totales,
+    sin_medir: Object.values(st.sinMedir||{}).reduce((a,b)=>a+b,0), eventos_de_notas: eventos.length,
+    formato: st.formato ? st.formato.txt : "" };
   encolar({fn:"confirmar_lote", args:{p}, desc:`Lote del ${dmy(st.fecha)}: ${p.mediciones.length} medición(es), ${p.nuevos.length} nuevo(s)`});
+  // después del lote (la cola respeta el orden, y el bolsón nuevo ya existe)
+  eventos.forEach(e=>encolar({fn:"agregar_evento", args:e, desc:`Evento de la nota: ${e.p_detalle}`}));
   staging = null; cargaBuf = {}; cargaModo = null; vista = "panel"; render();
   mostrarAviso(`Lote del ${dmy(p.fecha)} enviado: ${p.mediciones.length} medición(es), ${p.nuevos.length} bolsón(es) nuevo(s), ${p.calidad.length} lectura(s) de MS. Queda pendiente de auditar.`);
 }
 
-/* La carga a mano pasa por la misma revisión que la planilla: un solo
-   camino para guardar, y las mismas marcas (diferencia de medición, cero). */
-function stagingDeMano(){
-  const fecha = cargaBuf.__fecha || hoy();
-  const filas = [];
-  recorrido().forEach((b,i)=>{
-    const v = cargaBuf[b.id], est = cargaBuf["est:"+b.id];
-    if((v===undefined||String(v).trim()==="") && (!est || est===b.estado)) return;
-    filas.push({ renglon:i+1, etiqueta:b.etiqueta, aliTxt:b.alimento, pasada:b.ubicacion.fila, metrosTxt:String(v??"").trim(),
-      estadoTxt: est && est!==b.estado ? est : "", nota:"", lecturaTxt:"", orden:null, importar:true,
-      asignado:b.id, confirmado:true, tocado:true, propuesta:null });
-  });
-  const ms = [];
-  Object.keys(cargaBuf).filter(k=>k.startsWith("ms:")).forEach(k=>{
-    const key = k.slice(3), v = cargaBuf[k]||{};
-    const pes = pesadasDeTexto(v.pes), pct = numeroDe(v.pct), ini = numeroDe(v.ini);
-    if(!pes.length && (pct===null||pct===undefined)) return;
-    const dieta = key==="__dieta", fal = dieta ? proponerFaltantes(v.nota) : {};
-    ms.push({ id:uuid(), nombre: dieta?"Dieta mezclada":(D.alimentos[key]||{}).nombre, alimento: dieta?null:key, dieta,
-      pctArchivo: pct===undefined?null:pct, pesoIni: ini===undefined?null:ini, pesadas:pes,
-      origen: dieta?"mixer":(v.origen||null), origenTxt:v.origen||"", cual:v.cual||"", nota:v.nota||"",
-      faltantes:Object.keys(fal), porQueFaltantes:fal, importar:true });
-  });
-  return { id:uuid(), tipo:"manual", fuente:"a mano", archivo:"", fecha, quien:cargaBuf.__quien||"",
-           filas, ms, recuento:{}, faltantes:[], motivo:"" };
-}
+/* La carga a mano pasa por la misma revisión que la planilla (stagingDeMano, más abajo). */
 
 /* ══════════════════ MAPA INTERACTIVO ═════════════════════════════════
    Cada movimiento es una operación contra la base con la versión de cada
@@ -2874,7 +2847,8 @@ function vParam(){
     const corto = t => t ? esc(t.length>70 ? t.slice(0,70)+"…" : t) : '<i class="sd">s/d — sin cargar</i>';
     h += `<tr class="${ed?"sel":""}"><td data-l="Alimento"><span class="cuad" style="background:${colorAli(k)}"></span> <b>${esc(a.nombre)}</b></td>
       <td data-l="kg/m" class="num">${a.kg_por_metro==null?'<i class="sd">s/d</i>':f(a.kg_por_metro)}</td>
-      <td data-l="%MS de casa" class="num">${a.ms_pct==null?'<i class="sd">s/d</i>':f(a.ms_pct)+" %"}</td>
+      <td data-l="%MS de casa" class="num">${a.ms_pct==null?'<i class="sd">s/d</i>':f(a.ms_pct)+" %"}<div class="src" style="text-align:right">${SE_MIDE_MS.includes(k)
+        ? "se mide en el campo (silo); este vale mientras no haya una muestra a peso constante" : "no se mide en el campo"}</div></td>
       <td data-l="Confianza">${calTag(a)}</td>
       <td data-l="Origen" class="src">${corto(a.origen_kgm)}</td>
       <td data-l="Rendimiento real" class="src">${c===null?'<i class="sd">s/d</i> · ningún bolsón terminado con kilos declarados'
@@ -3244,110 +3218,479 @@ function confirmarRelevamiento(){
    Sale de la app con los bolsones ya listados y su última medición, para
    imprimir y anotar a mano. No hay que reescribirla cada semana. */
 
-function filasPlanilla(){
-  return recorrido().map(b=>{
-    const u=ultimaMed(b.id), a=ali(b);
-    return { id:et(b), alimento:a.nombre, fila:b.ubicacion.fila||"A",
-             estado:ESTADOS[b.estado]||b.estado, letra:ESTADO_LETRA[b.estado]||"",
-             ult: u? f(u.metros_restantes,1).replace(/<[^>]+>/g,"") : "s/d",
-             ultFecha: u? dmy(u.fecha) : "s/d",
-             nota: b.nota||"" };
+/* ══════════════════ PLANILLAS DE CAMPO (fase 5) ══════════════════════
+   Pensadas para quien mide, no para la app: una lista numerada por
+   alimento con los metros que quedan y una nota, y la humedad del silo y de
+   la dieta. Sin etiquetas, sin pasada, sin códigos de estado: el recorrido
+   define el inventario y la app propone después la correspondencia.
+   La impresa y el Excel piden exactamente lo mismo. */
+const PL_EXTRA = 5, PL_MIN = 10;
+const PL_CRITERIO = "alcanza para los de hoy y los que se armen";
+const MINUTOS_MS = [10, 15, 20, 25];
+/* %MS: solo se mide el silo y la dieta (Iñaki, 17/11). Maíz grano, gluten,
+   harina de germen y núcleo siguen con su valor de casa, editable en Ajustes. */
+const SE_MIDE_MS = ["MS"];
+const NOTAS_LISTA = ["extractora", "embolsadora", "roto", "no se pudo medir"];
+let plCfg = {};   // lo que el usuario tocó: { MG:{n:32}, GL:{on:true} }
+let focoMano = false;   // al abrir la carga a mano, el cursor va al primer renglón
+
+/* Renglones por alimento: los bolsones vivos de ese alimento + 5, mínimo 10,
+   redondeado a par para que las dos columnas queden parejas. */
+function renglonesDef(k){
+  const r = Math.max(PL_MIN, candidatos(k).length + PL_EXTRA);
+  return r % 2 ? r + 1 : r;
+}
+function bloquesPlanilla(){
+  return entradasAli().filter(([k,a])=>!a.sinBolson).map(([k,a])=>{
+    const c = plCfg[k]||{}, vivosK = candidatos(k).length, def = renglonesDef(k);
+    // lo que ya se tipeó a mano en un bloque lo mantiene visible y con lugar
+    const tipeados = Object.keys(cargaBuf).filter(x=>(x.startsWith("m:"+k+":")||x.startsWith("n:"+k+":")) && String(cargaBuf[x]).trim())
+      .map(x=>+x.split(":")[2]);
+    const pedido = Math.round(n(c.n));
+    const nn = Math.max(pedido>0 ? Math.min(pedido, 200) : def, ...tipeados);
+    return { k, nombre:a.nombre, vivos:vivosK, on: vivosK>0 || !!c.on || tipeados.length>0, n:nn, def };
+  });
+}
+function nombreHoja(nom){ const t = String(nom||""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
+
+/* El selector de renglones, al lado de los botones de las dos planillas. */
+function selectorPlanillas(){
+  const bs = bloquesPlanilla();
+  return `<div class="plsel">${bs.map(b=> b.on
+      ? `<label class="lbl plren">${esc(b.nombre)}<input class="mono" type="number" min="1" max="200" step="1" data-plren="${b.k}" value="${b.n}" aria-label="Renglones de ${esc(b.nombre)}">
+           <span class="src">${b.vivos} vivo${b.vivos===1?"":"s"} + ${PL_EXTRA} → ${b.def}${b.n!==b.def?" (cambiado)":""}${b.vivos?"":" · agregado a mano"}</span></label>`
+      : `<label class="tap"><input type="checkbox" data-plon="${b.k}"> Agregar bloque de ${esc(b.nombre)}</label>`).join("")}</div>
+    <p class="hint" style="margin:6px 0 0">Renglones por alimento: los bolsones de hoy + ${PL_EXTRA}, mínimo ${PL_MIN}, en número par
+      para que las dos columnas queden parejas: ${PL_CRITERIO}. Un alimento sin bolsones no aparece, salvo que lo agregues.</p>`;
+}
+
+/* ── la planilla impresa: una hoja A4 (diseno/planillas/planilla_impresa.html) ── */
+function planillaHTML(){
+  const bs = bloquesPlanilla().filter(b=>b.on);
+  const tabla = (desde, hasta) => `<table><thead><tr><th>N°</th><th>Metros</th><th>Nota</th></tr></thead><tbody>${
+    Array.from({length:hasta-desde+1}, (_,i)=>`<tr><td class="n">${desde+i}</td><td class="m"></td><td></td></tr>`).join("")}</tbody></table>`;
+  const bloques = bs.map((b,i)=>{
+    const mitad = Math.ceil(b.n/2);
+    return `<h2>${esc(b.nombre.toUpperCase())} <small>${i===0?"en el orden en que los recorrés · ":""}contados: <span></span></small></h2>
+<div class="dos">${tabla(1, mitad)}${b.n>mitad ? tabla(mitad+1, b.n) : `<div style="flex:1"></div>`}</div>`;
+  }).join("\n");
+  const celdasG = MINUTOS_MS.map(()=>`<td class="g">g</td>`).join("");
+  return `<!DOCTYPE html><html lang="es-AR"><head><meta charset="UTF-8"><title>Medición de silo bolsa</title>
+<style>
+@page{size:A4 portrait;margin:10mm 11mm}
+*{box-sizing:border-box}
+html{background:#fff}
+body{font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;margin:0;font-size:10pt}
+.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:2mm}
+h1{font-size:16pt;margin:0}
+.campo{font-size:11pt;margin-left:6mm}
+.campo span{display:inline-block;border-bottom:1px solid #000;width:38mm;height:6mm;vertical-align:bottom}
+.reglas{display:flex;gap:4mm;margin:2.5mm 0 3mm;font-size:8.6pt}
+.reglas div{flex:1;border:0.3mm solid #999;padding:1.6mm 2mm;line-height:1.3}
+.reglas b{font-size:9.5pt}
+h2{font-size:11.5pt;margin:2.5mm 0 1.2mm;display:flex;justify-content:space-between;align-items:baseline;break-after:avoid}
+h2 small{font-size:8.5pt;font-weight:normal}
+h2 small span{display:inline-block;border-bottom:1px solid #000;width:14mm}
+.dos{display:flex;gap:5mm;align-items:flex-start}
+table{border-collapse:collapse;width:100%}
+tr{break-inside:avoid}
+th{font-size:8pt;text-align:left;border:0.35mm solid #000;background:#e6e6e6;padding:1mm 1.5mm}
+td{border:0.3mm solid #777;height:7.6mm;padding:0 1.5mm;font-size:10pt}
+td.n{width:9mm;text-align:center;font-weight:bold;background:#f3f3f3}
+td.m{width:24mm}
+.hum td{height:10mm}
+.hum td.pre{font-weight:bold;white-space:nowrap}
+td.g{width:17mm;text-align:right;color:#999;font-size:8pt;vertical-align:bottom}
+.pie{margin-top:2.5mm;font-size:8pt;color:#444;border-top:0.3mm solid #999;padding-top:1.2mm}
+.noprint{margin:0 0 4mm;font-family:Arial,sans-serif}
+.noprint button{font:inherit;font-size:11pt;padding:8px 18px;cursor:pointer}
+@media print{.noprint{display:none}}
+</style></head><body>
+<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button></div>
+<div class="top"><h1>Medición de silo bolsa</h1>
+<div><span class="campo"><b>Fecha</b> <span></span></span><span class="campo"><b>Midió</b> <span></span></span></div></div>
+
+<div class="reglas">
+<div><b>Metros:</b> los que QUEDAN, de la mitad del triángulo de una punta a la mitad del otro.</div>
+<div><b>Si no se midió:</b> dejar vacío. No poner 0. El 0 va solo si el bolsón se terminó.</div>
+<div><b>Nota:</b> solo si pasa algo: «extractora», «embolsadora», «roto», «no se pudo medir».</div>
+</div>
+
+${bloques}
+
+<h2>HUMEDAD <small>pesar cada 5 minutos hasta que dos pesadas den igual</small></h2>
+<table class="hum"><thead><tr><th>Muestra</th><th>Al empezar</th>${MINUTOS_MS.map(x=>`<th>${x} min</th>`).join("")}<th>De dónde / qué faltó en la dieta</th></tr></thead><tbody>
+<tr><td class="pre">Silo</td><td class="g">100 g</td>${celdasG}<td></td></tr>
+<tr><td class="pre">Dieta</td><td class="g">100 g</td>${celdasG}<td></td></tr>
+<tr><td class="pre"></td><td class="g">g</td>${celdasG}<td></td></tr>
+</tbody></table>
+<div class="pie">Si los bolsones son más que los renglones, seguir al dorso con el mismo formato. Esta hoja se carga en la app tal cual: no hace falta pasarla en limpio.</div>
+</body></html>`;
+}
+
+/* ── el Excel: dos hojas, Mediciones y Humedad (diseno/planillas/planilla_silvana.xlsx) ──
+   Los estilos son los del archivo de referencia; el único cambio es el
+   formato del % MS: «0.0%» en vez de «0%», para que 48,5 % no se vea 49 %. */
+const ESTILOS_PLANILLA = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="3"><numFmt numFmtId="164" formatCode="DD/MM/YYYY"/><numFmt numFmtId="165" formatCode="0.0"/><numFmt numFmtId="166" formatCode="0.0%"/></numFmts><fonts count="8"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b val="1"/><sz val="14"/><name val="Arial"/></font><font><sz val="9"/><color rgb="FF5B6780"/><name val="Arial"/></font><font><b val="1"/><name val="Arial"/></font><font><name val="Arial"/></font><font><b val="1"/><sz val="9"/><name val="Arial"/></font><font><b val="1"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><color rgb="FF3B4760"/><name val="Arial"/></font></fonts><fills count="7"><fill><patternFill/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF4C2"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F1E38"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF6EDCF"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDDEFE3"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDEFF3"/></patternFill></fill></fills><borders count="5"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFB8BFCC"/></left><right style="thin"><color rgb="FFB8BFCC"/></right><top style="thin"><color rgb="FFB8BFCC"/></top><bottom style="thin"><color rgb="FFB8BFCC"/></bottom><diagonal/></border><border><left/><right/><top style="thin"><color rgb="FFB8BFCC"/></top><bottom/><diagonal/></border><border><left/><right style="thin"><color rgb="FFB8BFCC"/></right><top style="thin"><color rgb="FFB8BFCC"/></top><bottom/><diagonal/></border><border><left/><right style="thin"><color rgb="FFB8BFCC"/></right><top style="thin"><color rgb="FFB8BFCC"/></top><bottom style="thin"><color rgb="FFB8BFCC"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="19"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="4" fillId="2" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="4" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="4" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="6" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="4" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="165" fontId="4" fillId="2" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="4" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf><xf numFmtId="0" fontId="6" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="3" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="7" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="166" fontId="7" fillId="6" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+
+/* una celda: vacía (con estilo), número, texto (inlineStr) o fórmula sin
+   valor guardado (la calcula Excel o LibreOffice al abrir: fullCalcOnLoad) */
+function celdaXml(ref, s, v){
+  const st = s!=null ? ` s="${s}"` : "";
+  if(v===undefined || v===null || v==="") return `<c r="${ref}"${st}/>`;
+  if(typeof v==="number") return `<c r="${ref}"${st}><v>${v}</v></c>`;
+  if(typeof v==="object" && v.f) return `<c r="${ref}"${st}><f>${xesc(v.f)}</f></c>`;
+  return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`;
+}
+function filaXml(r, celdas, alto){ return `<row r="${r}"${alto?` ht="${alto}" customHeight="1"`:""}>${celdas.join("")}</row>`; }
+function hojaPlanillaXml(o){
+  const cols = o.anchos.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("");
+  const vista = o.congelar
+    ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${o.congelar}" topLeftCell="A${o.congelar+1}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A1" sqref="A1"/></sheetView></sheetViews>`
+    : `<sheetViews><sheetView workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews>`;
+  const merges = (o.unir||[]).length ? `<mergeCells count="${o.unir.length}">${o.unir.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
+  const dv = (o.validaciones||[]).length ? `<dataValidations count="${o.validaciones.length}">${o.validaciones.join("")}</dataValidations>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="${o.dim}"/>${vista}<sheetFormatPr baseColWidth="8" defaultRowHeight="15"/><cols>${cols}</cols><sheetData>${o.filas.join("")}</sheetData>${merges}${dv}<pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0.5" footer="0.5"/></worksheet>`;
+}
+function planillaXlsx(){
+  const bs = bloquesPlanilla().filter(b=>b.on);
+  // Mediciones: los renglones ya numerados por alimento, en la misma cantidad que la impresa
+  const rangos = []; let r = 7;
+  bs.forEach(b=>{ rangos.push({b, desde:r, hasta:r+b.n-1}); r += b.n; });
+  const ult = r-1;
+  // igual que la referencia: "Maíz grano "&COUNT(C7:C36)&" · Maíz silo "&COUNT(C37:C46)
+  const cuenta = rangos.map((x,i)=>`"${i?" · ":""}${nombreHoja(x.b.nombre)} "&COUNT(C${x.desde}:C${x.hasta})`).join("&");
+  const f1 = [
+    filaXml(1, [celdaXml("A1",1,"Medición de silo bolsa")]),
+    filaXml(2, [celdaXml("A2",2,"Completá solo lo amarillo. Metros que QUEDAN, de la mitad del triángulo de una punta a la mitad del otro. Si no se midió, vacío (no 0).")]),
+    filaXml(3, [celdaXml("A3",3,"Fecha"), celdaXml("B3",4), celdaXml("C3",5), celdaXml("D3",2,"Con metros cargados:")]),
+    filaXml(4, [celdaXml("A4",3,"Midió"), celdaXml("B4",6), celdaXml("C4",5), celdaXml("D4",7,{f:cuenta||'""'})]),
+    filaXml(6, ["Alimento","N°","Metros","Nota (solo si pasa algo)"].map((t,i)=>celdaXml("ABCD"[i]+6, 8, t)))
+  ];
+  rangos.forEach((x,i)=>{
+    const sA = i%2 ? 12 : 9, sB = i%2 ? 13 : 10;
+    for(let j=1, q=x.desde; q<=x.hasta; j++, q++)
+      f1.push(filaXml(q, [celdaXml("A"+q,sA,nombreHoja(x.b.nombre)), celdaXml("B"+q,sB,j), celdaXml("C"+q,11), celdaXml("D"+q,6)]));
+  });
+  f1.push(filaXml(ult+2, [celdaXml("A"+(ult+2),2,"Si hay más bolsones, insertá filas arriba de esta línea con el mismo formato.")]));
+  const hoja1 = hojaPlanillaXml({ dim:`A1:D${ult+2}`, congelar:6, anchos:[13,6,10,30], filas:f1, unir:["B3:C3","B4:C4"], validaciones:[
+    `<dataValidation type="decimal" operator="between" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Metros" error="${xesc("Escribí los metros que quedan, entre 0 y 80 (por ejemplo 67,8). Si no se midió, dejalo vacío.")}" promptTitle="Metros" prompt="${xesc("Metros que quedan, con coma: 67,8. Vacío si no se midió. 0 solo si se terminó.")}" sqref="C7:C${ult}"><formula1>0</formula1><formula2>80</formula2></dataValidation>`,
+    // showErrorMessage="0": la lista sugiere, pero acepta también texto libre
+    `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="0" promptTitle="Nota" prompt="${xesc("Elegí de la lista o escribí lo que pasó. Vacío si no pasa nada.")}" sqref="D7:D${ult}"><formula1>"${NOTAS_LISTA.join(",")}"</formula1></dataValidation>`]});
+
+  // Humedad: las fórmulas son las del archivo de referencia
+  const enc = ["Muestra","Al empezar (g)",...MINUTOS_MS.map(x=>`${x} min (g)`),"Último peso","Peso anterior","% MS","¿Peso constante?","De dónde / qué faltó en la dieta"];
+  const f2 = [
+    filaXml(1, [celdaXml("A1",1,"Humedad (% de materia seca)")]),
+    filaXml(2, [celdaXml("A2",2,"Pesar cada 5 minutos hasta que dos pesadas seguidas den igual (1 g o menos de diferencia). Completá solo lo amarillo.")]),
+    filaXml(4, enc.map((t,i)=>celdaXml("ABCDEFGHIJK"[i]+4, 14, t)), 30)
+  ];
+  [["Silo",100],["Dieta",100],["",null]].forEach(([nom, ini], i)=>{
+    const q = 5+i;
+    f2.push(filaXml(q, [
+      nom ? celdaXml("A"+q,15,nom) : celdaXml("A"+q,18), celdaXml("B"+q,6,ini??undefined),
+      celdaXml("C"+q,6), celdaXml("D"+q,6), celdaXml("E"+q,6), celdaXml("F"+q,6),
+      celdaXml("G"+q,16,{f:`IF(F${q}<>"",F${q},IF(E${q}<>"",E${q},IF(D${q}<>"",D${q},IF(C${q}<>"",C${q},""))))`}),
+      celdaXml("H"+q,16,{f:`IF(F${q}<>"",E${q},IF(E${q}<>"",D${q},IF(D${q}<>"",C${q},IF(C${q}<>"",B${q},""))))`}),
+      celdaXml("I"+q,17,{f:`IF(OR(G${q}="",B${q}=""),"",G${q}/B${q})`}),
+      celdaXml("J"+q,16,{f:`IF(COUNT(C${q}:F${q})=0,"",IF(COUNT(C${q}:F${q})<2,"seguir pesando",IF(ABS(G${q}-H${q})<=1,"sí","no: seguir pesando")))`}),
+      celdaXml("K"+q,6)]));
+  });
+  f2.push(filaXml(9, [celdaXml("A9",2,"Las columnas grises se calculan solas. Si «¿Peso constante?» dice «no», el % MS es un tope: la materia seca real es menor.")]));
+  f2.push(filaXml(10, [celdaXml("A10",2,"«Al empezar» trae 100 g porque es la muestra de siempre: cambialo si pesaste otra cantidad.")]));
+  const hoja2 = hojaPlanillaXml({ dim:"A1:K10", anchos:[10,11,9,9,9,9,9,9,7,16,30], filas:f2 });
+
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  const wb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="Mediciones" sheetId="1" r:id="rId1"/><sheet name="Humedad" sheetId="2" r:id="rId2"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`;
+  const wbr = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+  return zip([
+    {name:"[Content_Types].xml", data:ct}, {name:"_rels/.rels", data:rels},
+    {name:"xl/workbook.xml", data:wb}, {name:"xl/_rels/workbook.xml.rels", data:wbr},
+    {name:"xl/styles.xml", data:ESTILOS_PLANILLA},
+    {name:"xl/worksheets/sheet1.xml", data:hoja1}, {name:"xl/worksheets/sheet2.xml", data:hoja2}
+  ]);
+}
+
+/* ══════════════════ LEER: metros, notas y el formato nuevo ═══════════ */
+/* Metros como los escribe Silvana. Devuelve {v} con el número, {v:null} si
+   está vacío, o {v:undefined} si no se entiende: va a «revisar» con el texto
+   original a la vista y nunca se convierte en 0.
+     67,8 · 67.8 · 67.10 → decimales (el punto y la coma son lo mismo: un
+       bolsón no llega a 1.000 m, así que nunca es separador de miles)
+     67:80 · 67:80 cm · 67 m 80 cm → metros y centímetros
+   «67:8» no se adivina (¿8 o 80 cm?): va a revisar. */
+function metrosDe(txt){
+  const orig = String(txt==null?"":txt).trim();
+  const t = orig.toLowerCase().replace(/\s+/g," ");
+  if(t==="") return {v:null};
+  const red = v => Math.round(v*100)/100;
+  let m;
+  if((m = t.match(/^(\d+)\s*(?:m|mts?|metros?)?\s*:\s*(\d+)\s*(?:cm)?$/))){
+    if(m[2].length!==2) return {v:undefined, por:`«${orig}»: no sé si después de los dos puntos son ${m[2]} o ${m[2]}0 cm`};
+    return {v:red(+m[1] + +m[2]/100), como:`«${orig}» = ${m[1]} m y ${m[2]} cm`};
+  }
+  if((m = t.match(/^(\d+)\s*(?:m|mts?|metros?)\s*(\d+)\s*(cm|centimetros?|centímetros?)?$/))){
+    if(m[2].length>2 || (m[2].length===1 && !m[3])) return {v:undefined, por:`«${orig}»: no sé cuántos centímetros son`};
+    return {v:red(+m[1] + +m[2]/100), como:`«${orig}» = ${m[1]} m y ${m[2]} cm`};
+  }
+  if((m = t.match(/^(\d+)\s*(?:m|mts?|metros?)$/))) return {v:+m[1]};
+  if((m = t.match(/^(\d+)(?:[.,](\d+))?$/))) return {v:red(parseFloat(m[1]+"."+(m[2]||"0")))};
+  return {v:undefined};
+}
+const METROS_MAX = 80;   // el tope que pide la planilla de Excel: un bolsón de 9 pies no llega
+
+/* Lo que dice la nota → qué propone la revisión (Iñaki confirma con el tilde,
+   o la descarta en «Editar»). Cada propuesta dice de qué palabra salió. */
+const NOTA_REGLAS = [
+  {re:/no\s+se\s+pudo\s+medir/i, tipo:"sin_medicion"},
+  {re:/extractora|sacando\s+mixer|mixer/i, tipo:"estado", estado:"en_uso"},
+  {re:/embolsadora/i, tipo:"estado", estado:"armando"},
+  {re:/\brot[oa]s?\b|rotura/i, tipo:"evento", evento:"rotura"}
+];
+function propuestaNota(nota){
+  const t = String(nota||"").trim(); if(!t) return null;
+  for(const r of NOTA_REGLAS){ const m = t.match(r.re); if(m) return Object.assign({palabra:m[0]}, r); }
+  return null;
+}
+function lineaNota(fl){
+  const p = fl.notaProp; if(!p) return null;
+  const de = `sale de la palabra «${p.palabra}» de la nota «${fl.nota}»`;
+  if(p.tipo==="estado") return `Propone estado ${ESTADOS[p.estado]}: ${de}.`;
+  if(p.tipo==="evento") return `Propone un evento de rotura con esa nota: ${de}.`;
+  return `Sin medición: la nota dice «${p.palabra}». Queda un evento de nota con el texto.`;
+}
+
+/* De dónde salió la muestra de MS, leído de la nota (los códigos B/C/M
+   ya no se usan en las planillas nuevas). Gana la primera palabra que
+   aparece en este orden: celda, mixer, bolsón. */
+function origenDeNota(nota, dieta){
+  const t = String(nota||"");
+  const reglas = [[/celda/i,"celda"],[/mixer|comedero|dieta mezclada/i,"mixer"],[/bols[oó]n|\bfrente\b|\bM[SG]\s?\d+\b/i,"bolson"]];
+  for(const [re,tipo] of reglas){ const m = t.match(re); if(m) return {tipo, por:`sale de la palabra «${m[0]}» de la nota`}; }
+  return dieta ? {tipo:"mixer", por:"la dieta se saca del mixer"} : null;
+}
+function cualDeNota(nota){
+  const m = String(nota||"").match(/\b(M[SG]\s?\d+)\b|\bcelda\s+(\d+|[a-z])\b/i);
+  return m ? (m[1] ? m[1].replace(/\s/g,"").toUpperCase() : "celda "+m[2]) : "";
+}
+
+/* Fila del encabezado: la primera de las 30 primeras que tiene todas las claves. */
+function filaEncabezado(h, ...claves){
+  for(let i=0;i<Math.min(h.length,30);i++){
+    const fl = (h[i]||[]).map(norm);
+    if(claves.every(c=>fl.some(x=>x===c || x.startsWith(c)))) return i;
+  }
+  return -1;
+}
+const CLAVES_NUM = ["n","no","nro","num","numero"];
+function detectarFormato(hojas, fuente){
+  const med = buscarHoja(hojas,"Mediciones");
+  const soloCsv = /CSV/.test(fuente) && !/Excel/.test(fuente);
+  if(med){
+    const i = filaEncabezado(med,"alimento","metros");
+    const enc = i>=0 ? (med[i]||[]).map(norm) : [];
+    if(i>=0 && enc.some(x=>CLAVES_NUM.includes(x)) && !enc.some(x=>/^(etiqueta|bolson)/.test(x)))
+      return {clave:"nuevo", txt: soloCsv ? "planilla nueva guardada como CSV (Alimento, N°, Metros, Nota)"
+        : `planilla nueva (hojas ${Object.keys(hojas).map(x=>"«"+x+"»").join(" y ")}: Alimento, N°, Metros, Nota)`};
+  }
+  const nom = Object.keys(hojas);
+  if(soloCsv) return {clave:"viejo", txt:`CSV del formato viejo (con etiqueta y alimento por renglón)`};
+  return {clave:"viejo", txt:`planilla vieja${nom.length>1?` de ${nom.length} hojas (${nom.join(", ")})`:` (hoja «${nom[0]}»)`}, con etiqueta por renglón`};
+}
+function analizarPlanilla(hojas, fuente){
+  const formato = detectarFormato(hojas, fuente);
+  const st = formato.clave==="nuevo" ? analizarNuevo(hojas, fuente) : analizarViejo(hojas, fuente);
+  st.formato = formato;
+  return st;
+}
+/* Formato nuevo: Alimento | N° | Metros | Nota, con Fecha y Midió arriba.
+   La etiqueta es el prefijo del alimento más el N° (Maíz grano y 14 → MG14).
+   Un renglón sin metros y sin nota no genera nada: se cuenta como «sin medir». */
+function analizarNuevo(hojas, fuente){
+  const med = buscarHoja(hojas,"Mediciones");
+  const i0 = filaEncabezado(med,"alimento","metros");
+  const enc = med[i0]||[];
+  const col = mapaColumnas(enc, {alimento:["alimento"], metros:["metros","metro"], nota:["nota","observ"]});
+  col.num = enc.findIndex(h=>CLAVES_NUM.includes(norm(h)));
+  let fecha = null, fechaTxt = "", quien = "";
+  for(let r=0;r<i0;r++){
+    const fl = med[r]||[], k = norm(fl[0]), v = fl.slice(1).find(x=>String(x||"").trim()!=="");
+    if(k==="fecha"){ fechaTxt = String(v||"").trim(); fecha = fechaDe(fechaTxt) || null; }
+    if(k==="midio" || k.startsWith("medidopor")) quien = String(v||"").trim();
+  }
+  const filas = [], sinMedir = {};
+  for(let r=i0+1;r<med.length;r++){
+    const fl = med[r]||[], cel = i => i>=0 ? String(fl[i]==null?"":fl[i]).trim() : "";
+    const aliTxt = cel(col.alimento), numTxt = cel(col.num), metrosTxt = cel(col.metros), nota = cel(col.nota);
+    if(!numTxt && !metrosTxt && !nota) continue;          // renglón vacío o un texto de ayuda en la columna A
+    const k = alimentoDe(aliTxt), num = numeroDe(numTxt);
+    if(!metrosTxt && !nota){ const c = k || aliTxt || "s/d"; sinMedir[c] = (sinMedir[c]||0)+1; continue; }
+    const fila = { renglon:r+1, etiqueta:"", aliTxt, pasada:"", metrosTxt, estadoTxt:"", nota, lecturaTxt:"",
+                   orden: (num>0 && Number.isInteger(num)) ? num : null, importar:true, tocado:false };
+    if(!(num>0 && Number.isInteger(num))) fila.errExtra = `Falta el N° del renglón${numTxt?` (dice «${numTxt}»)`:""}: sin él no hay etiqueta.`;
+    else fila.etiqueta = (k || aliTxt.slice(0,2).toUpperCase()) + num;
+    filas.push(fila);
+  }
+  const hum = buscarHoja(hojas,"Humedad","Materia seca","MateriaSeca");
+  return { id:uuid(), tipo:"planilla", fuente, fecha: fecha || hoy(), fechaVarias:null, quien, filas,
+           ms: hum && hum!==med ? leerMs(hum, true) : [], recuento:{}, faltantes:[], motivo:"", sinMedir,
+           avisoFecha: fecha ? null : (fechaTxt ? `No entiendo la fecha «${fechaTxt}» de la hoja: se propone hoy; corregila arriba.`
+                                                : "La hoja no trae fecha: se propone hoy; corregila arriba si midieron otro día.") };
+}
+/* Humedad / Materia seca: la fila de encabezado se busca (en la planilla
+   nueva está en la fila 4), y el minuto de cada pesada sale del encabezado
+   («10 min» → 10), no de la posición. */
+function leerMs(hms, nuevo){
+  const ms = [];
+  if(!hms || hms.length<2) return ms;
+  let i0 = filaEncabezado(hms,"muestra"); if(i0<0) i0 = filaEncabezado(hms,"alimento"); if(i0<0) i0 = 0;
+  const enc = hms[i0]||[];
+  const defs = {alimento:["alimento","muestra"], origen:["origen"], cual:["cual","cuál"], ini:["pesoinicial","inicial","alempezar"],
+                nota:["nota","observ","dedonde"], falt:["falto","faltaron","faltantes"]};
+  if(!nuevo) defs.pct = ["msh","ms","porcentaje"];       // en la planilla nueva el % MS es una fórmula: se recalcula
+  const c = mapaColumnas(enc, defs); if(nuevo) c.pct = -1;
+  const fijas = [], pares = {};
+  enc.forEach((h,i)=>{
+    const k = norm(h); let m;
+    if((m = k.match(/^peso(\d+)min/))) fijas.push({i, min:+m[1]});
+    else if((m = String(h||"").trim().match(/^(\d+)\s*min/i))) fijas.push({i, min:+m[1]});
+    else if((m = k.match(/^min(\d)$/))) (pares[m[1]]=pares[m[1]]||{}).min=i;
+    else if((m = k.match(/^g(\d)$/))) (pares[m[1]]=pares[m[1]]||{}).g=i;
+  });
+  for(let r=i0+1;r<hms.length;r++){
+    const fl = hms[r]||[]; const cel = i => i>=0 ? String(fl[i]==null?"":fl[i]).trim() : "";
+    const nom = cel(c.alimento);
+    const pesadas = fijas.map(x=>({min:x.min, g:numeroDe(cel(x.i))})).filter(p=>p.g!==null && p.g!==undefined);
+    Object.values(pares).forEach(p=>{ const mi=numeroDe(cel(p.min)), g=numeroDe(cel(p.g));
+      if(n(mi)!==null && n(g)!==null) pesadas.push({min:mi, g}); });
+    const pctTxt = c.pct>=0 ? cel(c.pct) : "", pesoIni = numeroDe(cel(c.ini));
+    if(!pctTxt && !pesadas.length) continue;               // «Al empezar: 100» sola no es una lectura
+    const dieta = norm(nom).includes("dieta");
+    const nota = cel(c.nota);
+    const fal = {};
+    if(dieta){
+      Object.assign(fal, proponerFaltantes(nota));
+      cel(c.falt).split(/[,;·]/).forEach(x=>{ const k=alimentoDe(x,true); if(k) fal[k]=`la columna «faltó» dice «${cel(c.falt)}»`; });
+    }
+    const colOrigen = cel(c.origen);
+    let origen = origenMsDe(colOrigen), origenPor = colOrigen ? `columna «Origen»: «${colOrigen}»` : "";
+    if(!colOrigen){ const o = origenDeNota(nota, dieta); origen = o ? o.tipo : null; origenPor = o ? o.por : ""; }
+    ms.push({ id:uuid(), nombre:nom || "(sin nombre)", sinNombre:!nom, alimento:dieta?null:alimentoDe(nom,true), dieta, pctArchivo:numeroDe(pctTxt),
+              pesoIni: pesoIni===undefined?null:pesoIni, pesadas, origen, origenTxt:colOrigen, origenPor,
+              cual: cel(c.cual) || (dieta ? "" : cualDeNota(nota)), nota, faltantes:Object.keys(fal), porQueFaltantes:fal, importar:true });
+  }
+  return ms;
+}
+
+/* ══════════════════ CARGA A MANO, con el formato del papel ═══════════ */
+function vCargaMano(){
+  const bs = bloquesPlanilla();
+  let h = avisoBorrador() + pasos(1) + cabeza({eyebrow:"Carga a mano", h1:"Nueva medición a mano",
+    sub:"Igual que la planilla de papel: el N°, los metros que quedan y una nota solo si pasa algo. Enter baja al renglón siguiente; Ctrl+Enter va a la revisión. Lo que quede vacío no se midió (s/d): nunca es 0.",
+    acc:`<button id="volverModo">← Cambiar forma de cargar</button>`});
+  h += `<section class="card"><div class="pad frow" style="margin:0">
+      <div><span class="lbl">Fecha</span><input type="date" id="cFecha" value="${cargaBuf.__fecha||hoy()}"></div>
+      <div><span class="lbl">Midió</span><input id="cQuien" placeholder="quién midió" value="${esc(cargaBuf.__quien||"")}"></div>
+    </div></section>`;
+  const extra = [];
+  bs.forEach(b=>{
+    if(!b.on){ extra.push(`<label class="tap"><input type="checkbox" data-plon="${b.k}"> Agregar bloque de ${esc(b.nombre)}</label>`); return; }
+    const mitad = Math.ceil(b.n/2);
+    const tabla = (d, hs) => `<table class="mano"><thead><tr><th>N°</th><th>Metros</th><th>Nota</th></tr></thead><tbody>${
+      Array.from({length:hs-d+1}, (_,i)=>{ const j = d+i; return `<tr><td class="n mono">${j}</td>
+        <td><input class="mono" data-mm="${b.k}|${j}" inputmode="decimal" autocomplete="off" aria-label="Metros de ${esc(b.nombre)} ${j}" value="${esc(cargaBuf[`m:${b.k}:${j}`]??"")}"></td>
+        <td><input data-mn="${b.k}|${j}" list="notasMano" autocomplete="off" aria-label="Nota de ${esc(b.nombre)} ${j}" value="${esc(cargaBuf[`n:${b.k}:${j}`]??"")}"></td></tr>`; }).join("")}</tbody></table>`;
+    h += `<section class="card"><div class="card-h"><h2><span class="cuad" style="background:${colorAli(b.k)}"></span> ${esc(b.nombre)}</h2>
+        <span class="der">${b.n} renglones · ${b.vivos} vivo${b.vivos===1?"":"s"} en la base · ${b.k}1, ${b.k}2… en la revisión</span></div>
+      <div class="dos pad">${tabla(1, mitad)}${b.n>mitad ? tabla(mitad+1, b.n) : ""}</div></section>`;
+  });
+  if(extra.length) h += `<div class="bar">${extra.join("")}</div>`;
+  h += `<datalist id="notasMano">${NOTAS_LISTA.map(x=>`<option value="${x}">`).join("")}</datalist>`;
+  h += `<section class="card"><div class="card-h"><h2>Humedad</h2><span class="der">pesar cada 5 minutos hasta que dos pesadas den igual · solo silo y dieta</span></div>
+    <div class="tabla"><table class="mano hum"><thead><tr><th>Muestra</th><th>Al empezar (g)</th>${MINUTOS_MS.map(x=>`<th>${x} min</th>`).join("")}<th>De dónde / qué faltó en la dieta</th></tr></thead><tbody>`;
+  [["MS","Silo"],["dieta","Dieta"]].forEach(([k,nom])=>{
+    const v = c => cargaBuf[`h:${k}:${c}`];
+    h += `<tr><td><b>${nom}</b></td>
+      <td><input class="mono" data-hm="${k}|ini" inputmode="decimal" autocomplete="off" aria-label="${nom}: peso al empezar" value="${esc(v("ini")??"100")}"></td>
+      ${MINUTOS_MS.map(m=>`<td><input class="mono" data-hm="${k}|${m}" inputmode="decimal" autocomplete="off" aria-label="${nom}: peso a los ${m} min" value="${esc(v(m)??"")}"></td>`).join("")}
+      <td><input data-hm="${k}|nota" autocomplete="off" aria-label="${nom}: de dónde o qué faltó" placeholder="${k==="dieta"?"ej.: no tenía harina de germen":"ej.: de la celda"}" value="${esc(v("nota")??"")}"></td></tr>
+      <tr><td colspan="${MINUTOS_MS.length+3}" class="src" id="hres-${k}">${esc(resultadoHumedad(k))}</td></tr>`;
+  });
+  h += `</tbody></table></div></section>
+    <div class="sticky-save"><button class="p" id="btnGuardar" style="width:100%">Revisar antes de guardar</button></div>`;
+  return h;
+}
+function humedadDeMano(k){
+  const v = c => String(cargaBuf[`h:${k}:${c}`]??"").trim();
+  const ini = v("ini")==="" ? 100 : numeroDe(v("ini"));
+  const pesadas = MINUTOS_MS.map(m=>({min:m, g:numeroDe(v(m))})).filter(p=>p.g!==null && p.g!==undefined);
+  return { ini, pesadas, nota:v("nota") };
+}
+function resultadoHumedad(k){
+  const x = humedadDeMano(k);
+  if(!x.pesadas.length) return "sin pesadas: no se carga";
+  const c = calcMs({pesoIni:x.ini, pesadas:x.pesadas, pctArchivo:null});
+  return c.pct===null ? "s/d" : `${c.constante===false?"≤ ":""}${fNum(c.pct)} % · ${c.por}`;
+}
+function stagingDeMano(){
+  const fecha = cargaBuf.__fecha || hoy();
+  const filas = [], sinMedir = {};
+  let renglon = 0;
+  bloquesPlanilla().filter(b=>b.on).forEach(b=>{
+    for(let j=1;j<=b.n;j++){
+      renglon++;
+      const mt = String(cargaBuf[`m:${b.k}:${j}`]??"").trim(), nt = String(cargaBuf[`n:${b.k}:${j}`]??"").trim();
+      if(!mt && !nt){ sinMedir[b.k] = (sinMedir[b.k]||0)+1; continue; }
+      filas.push({ renglon, etiqueta:b.k+j, aliTxt:b.k, pasada:"", metrosTxt:mt, estadoTxt:"", nota:nt, lecturaTxt:"",
+                   orden:j, importar:true, tocado:false });
+    }
+  });
+  const ms = [];
+  [["MS","Silo"],["dieta","Dieta"]].forEach(([k,nom])=>{
+    const x = humedadDeMano(k); if(!x.pesadas.length) return;
+    const dieta = k==="dieta", fal = dieta ? proponerFaltantes(x.nota) : {};
+    const o = origenDeNota(x.nota, dieta);
+    ms.push({ id:uuid(), nombre:nom, alimento: dieta?null:"MS", dieta, pctArchivo:null, pesoIni: x.ini===undefined?null:x.ini, pesadas:x.pesadas,
+      origen: o?o.tipo:null, origenTxt:"", origenPor: o?o.por:"", cual: dieta?"":cualDeNota(x.nota), nota:x.nota,
+      faltantes:Object.keys(fal), porQueFaltantes:fal, importar:true });
+  });
+  return { id:uuid(), tipo:"manual", fuente:"a mano", archivo:"", fecha, quien:cargaBuf.__quien||"",
+           filas, ms, recuento:{}, faltantes:[], motivo:"", sinMedir,
+           formato:{clave:"mano", txt:"carga a mano, con el formato de la planilla de papel"} };
+}
+function cablearMano(){
+  document.querySelectorAll("[data-plren]").forEach(el=>{ el.onchange = ()=>{
+    const v = Math.round(numeroDe(el.value)); plCfg[el.dataset.plren] = Object.assign({}, plCfg[el.dataset.plren], {n: v>0 ? v : null}); render(); }; });
+  document.querySelectorAll("[data-plon]").forEach(el=>{ el.onchange = ()=>{
+    plCfg[el.dataset.plon] = Object.assign({}, plCfg[el.dataset.plon], {on: el.checked}); render(); }; });
+  const clave = el => el.dataset.mm!==undefined ? "m:"+el.dataset.mm.replace("|",":")
+                   : el.dataset.mn!==undefined ? "n:"+el.dataset.mn.replace("|",":") : "h:"+el.dataset.hm.replace("|",":");
+  const campos = [...document.querySelectorAll("[data-mm],[data-mn],[data-hm]")];
+  if(focoMano && campos.length){ focoMano = false; campos[0].focus(); }
+  campos.forEach(el=>{
+    el.oninput = ()=>{ cargaBuf[clave(el)] = el.value; guardarBorrador();
+      if(el.dataset.hm!==undefined){ const k = el.dataset.hm.split("|")[0], r = document.getElementById("hres-"+k); if(r) r.textContent = resultadoHumedad(k); } };
+    el.onkeydown = e=>{
+      if(e.key!=="Enter") return;
+      e.preventDefault();
+      const bg = document.getElementById("btnGuardar");
+      if(e.ctrlKey || e.metaKey){ if(bg) bg.click(); return; }
+      // Enter baja: al renglón siguiente de la misma columna (metros con metros, nota con nota)
+      const attr = el.dataset.mm!==undefined ? "data-mm" : el.dataset.mn!==undefined ? "data-mn" : "data-hm";
+      const lista = campos.filter(x=>x.hasAttribute(attr)), i = lista.indexOf(el);
+      const sig = lista[i+1] || bg;
+      if(sig){ sig.focus(); if(sig.select) sig.select(); }
+    };
   });
 }
 
-function planillaHTML(){
-  const filas = +(document.getElementById("plRenglones")||{}).value || 40;
-  const ings = ingsDieta();
-  const alims = entradasAli().filter(([k,a])=>!a.sinBolson);
-
-  let cuerpo = "";
-  for(let i=1;i<=filas;i++){
-    cuerpo += `<tr><td class="n">${i}</td><td class="w"></td><td class="w"></td><td class="w"></td>
-      <td class="w"></td><td class="w"></td><td class="w"></td></tr>`;
-  }
-  const cajas = alims.map(([k,a])=>
-    `<td class="cnt"><b>${esc(a.nombre)}</b><br><span class="caja"></span></td>`).join("")
-    + `<td class="cnt"><b>Otro</b><br><span class="caja"></span></td>`
-    + `<td class="cnt tot"><b>TOTAL</b><br><span class="caja"></span></td>`;
-
-  const msRows = ings.map(k=>{
-    const a=D.alimentos[k];
-    return `<tr><td class="b">${esc(a?a.nombre:k)}</td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td></tr>`;
-  }).join("") +
-  `<tr><td class="b">DIETA MEZCLADA</td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c f">M (mixer)</td><td class="w f">faltó:</td></tr>`;
-
-  return `<!DOCTYPE html><html lang="es-AR"><head><meta charset="UTF-8">
-<title>Planilla de medición — Silo Bolsa</title><style>
-  @page{size:A4 portrait;margin:9mm}
-  *{box-sizing:border-box}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#000;margin:0;line-height:1.25}
-  h1{font-size:13pt;margin:0}
-  h2{font-size:10pt;margin:0 0 1.2mm}
-  .hd{border-bottom:2px solid #000;padding-bottom:1.5mm;margin-bottom:2mm;overflow:hidden}
-  .hd .der{float:right;font-size:8pt;text-align:right}
-  .campos{margin-bottom:2mm;font-size:9pt}
-  .campos u{text-decoration:none;border-bottom:1px solid #000;display:inline-block;min-width:32mm}
-  table{width:100%;border-collapse:collapse;margin-bottom:2.5mm}
-  th{font-size:7pt;text-transform:uppercase;border:0.4mm solid #000;background:#e4e4e4;
-     padding:0.9mm 0.8mm;text-align:left;line-height:1.15}
-  td{border:0.25mm solid #888;padding:0.6mm 0.8mm;font-size:8.5pt;height:5.6mm;line-height:1.15}
-  td.n{text-align:right;font-size:7pt;color:#888;width:7mm;background:#fafafa}
-  td.b{font-weight:bold;white-space:nowrap}
-  td.c{text-align:center;white-space:nowrap}
-  td.f{font-size:7pt;color:#555}
-  td.w{background:#fff}
-  td.cnt{text-align:center;font-size:7.5pt;height:12mm;vertical-align:top;padding-top:1.2mm}
-  td.cnt.tot{background:#f0f0f0}
-  .caja{display:inline-block;border-bottom:0.4mm solid #000;width:14mm;height:6mm;margin-top:1mm}
-  .nota{font-size:7.5pt;color:#333;line-height:1.35;border:0.25mm solid #888;padding:1.3mm;margin-bottom:2.5mm}
-  .pie{font-size:7pt;color:#666;border-top:0.25mm solid #888;padding-top:1mm;margin-top:1mm}
-  @media print{ .noprint{display:none} }
-  .noprint{margin-bottom:4mm}
-  .noprint button{font:inherit;font-size:11pt;padding:8px 18px;cursor:pointer}
-</style></head><body>
-<div class="noprint"><button onclick="window.print()">Imprimir / Guardar como PDF</button></div>
-<div class="hd">
-  <div class="der">Planilla en blanco · ${filas} renglones<br>emitida ${dmy(hoy())}</div>
-  <h1>Medición de silo bolsa</h1>
-  <div style="font-size:8pt">PEGSA &amp; Bulltrade · Feedlot · bolsones de 9 pies</div>
-</div>
-<div class="campos"><b>Fecha:</b> <u></u> &nbsp;&nbsp; <b>Medido por:</b> <u></u> &nbsp;&nbsp;
-  <b>Método:</b> <u></u></div>
-
-<h2>Cuántos bolsones hay hoy</h2>
-<div class="nota" style="margin-bottom:1.5mm">Contar primero y anotar acá. Este número es el control: si al
-terminar la planilla los renglones cargados no coinciden con este total, falta o sobra algo.</div>
-<table border="1" cellspacing="0"><tr>${cajas}</tr></table>
-
-<div class="nota"><b>Anotar los metros que QUEDAN sin consumir</b>, medidos siempre desde la punta atada.
-Numerá los bolsones vos en el orden del recorrido — la planilla no trae ninguno predefinido. La app propone después qué bolsón es cada uno.<br>
-<b>Alimento:</b> MG maíz grano · MS maíz silo · GL gluten.&nbsp;
-<b>Estado:</b> <b>C</b> cerrado · <b>U</b> en uso, extractora enganchada, se vacía ·
-<b>A</b> en armado, embolsadora enganchada, se llena · <b>T</b> terminado.
-La máquina que tiene enganchada dice cuál de los dos es.<br>
-Si un bolsón no se mide, dejar el casillero de metros <b>vacío</b> — no poner cero. El cero solo se escribe
-cuando quedó terminado.</div>
-
-<table border="1" cellspacing="0"><thead><tr>
-  <th style="width:7mm">N°</th><th style="width:26mm">Etiqueta<br><span style="font-weight:normal;font-size:6.5pt">como lo numeraste</span></th>
-  <th style="width:15mm">Alim.<br><span style="font-weight:normal;font-size:6.5pt">MG·MS·GL</span></th>
-  <th style="width:14mm">Pasada</th><th style="width:20mm">Metros</th>
-  <th style="width:15mm">Estado<br><span style="font-weight:normal;font-size:6.5pt">C·U·A·T</span></th>
-  <th>Observaciones</th></tr></thead>
-<tbody>${cuerpo}</tbody></table>
-
-<h2>Materia seca del día</h2>
-<div class="nota" style="margin-bottom:1.5mm">Origen de la muestra: <b>B</b> frente de un bolsón en uso (poner
-cuál) · <b>C</b> celda de alimento · <b>M</b> mixer. Anotar cada pesada con su minuto y seguir pesando hasta que dos seguidas
-den igual (peso constante). En la dieta, anotar qué ingrediente faltó ese día.</div>
-<table border="1" cellspacing="0"><thead><tr><th style="width:34mm">Alimento</th><th style="width:17mm">Peso inicial (g)</th>
-  <th style="width:21mm">Pesada 1<br>min · g</th><th style="width:21mm">Pesada 2<br>min · g</th><th style="width:21mm">Pesada 3<br>min · g</th>
-  <th style="width:17mm">Origen (B/C/M)</th><th>Cuál (bolsón o celda)</th></tr></thead>
-<tbody>${msRows}</tbody></table>
-<div class="pie">Al volver, se carga en la app (pestaña Carga): queda guardado en la base para todos.
-Un %MS que no llegó a peso constante se guarda como cota («≤») y no reemplaza al valor de casa.</div>
-</body></html>`;
-}
 
 function imprimirPlanilla(){
   const w = window.open("", "_blank");
@@ -3461,66 +3804,6 @@ ${hojas.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlfor
     ...hojas.map((s,i)=>({name:`xl/worksheets/sheet${i+1}.xml`, data:hojaXml(s)}))
   ];
   return zip(files);
-}
-function planillaXlsx(){
-  const filas = +(document.getElementById("plRenglones")||{}).value || 40;
-  const alims = entradasAli().filter(([k,a])=>!a.sinBolson);
-  const sig = alims.map(([k])=>k).join(",");
-  const ult = filas+1;
-  const IN = v => ({__inp:true, v:v===undefined?"":v});
-
-  // Mediciones: todo en blanco, con desplegables
-  const h1 = [["N°","ETIQUETA","ALIMENTO","PASADA","METROS","ESTADO","OBSERVACIONES","LECTURA"]];
-  for(let i=1;i<=filas;i++) h1.push([i, IN(), IN(), IN(), IN(), IN(), IN(), IN()]);
-
-  // Recuento: lo que contás a mano contra lo que efectivamente cargaste
-  const h0 = [["CUÁNTOS BOLSONES HAY HOY","","",""],
-    ["Contá primero, cargá después. Las dos últimas columnas se calculan solas.","","",""],[""],
-    ["Alimento","Contado en el campo","Cargado en la planilla","Diferencia"]];
-  alims.forEach(([k,a],i)=>{
-    const r = 5+i;
-    h0.push([a.nombre, IN(),
-      {f:`COUNTIF(Mediciones!$C$2:$C$${ult},"${k}")`},
-      {f:`IF(B${r}="","",C${r}-B${r})`}]);
-  });
-  const rTot = 5+alims.length;
-  h0.push(["TOTAL", {f:`SUM(B5:B${rTot-1})`}, {f:`COUNTA(Mediciones!$B$2:$B$${ult})`},
-                    {f:`IF(B${rTot}=0,"",C${rTot}-B${rTot})`}]);
-  h0.push([""],["Si la diferencia no da 0, falta o sobra un renglón.","","",""],[""],
-    ["Fecha de medición", IN()],["Medido por", IN()],["Método", IN()]);
-
-  // Materia seca
-  const ings = ingsDieta();
-  const h2 = [["Alimento","PESO INICIAL","MIN 1","G 1","MIN 2","G 2","MIN 3","G 3","% MS HOY","ORIGEN","CUÁL (bolsón o celda)","FALTÓ","NOTA"]];
-  ings.forEach(k=>{ const a=D.alimentos[k]; h2.push([a?a.nombre:k, IN(), IN(), IN(), IN(), IN(), IN(), IN(), IN(), IN(), IN(), "", IN()]); });
-  h2.push(["DIETA MEZCLADA", IN(), IN(), IN(), IN(), IN(), IN(), IN(), IN(), IN("M"), IN(), IN(), IN()]);
-
-  const h3 = [["Cómo se llena esta planilla"],[""],
-    ["1","Contar los bolsones que hay HOY y anotarlos en la hoja Recuento, antes de medir."],
-    ["2","Numerar los bolsones uno mismo, en el orden del recorrido, y anotar ese número en ETIQUETA. La app propone qué bolsón es cada uno."],
-    ["3","Anotar los METROS QUE QUEDAN sin consumir, medidos siempre desde la punta atada."],
-    ["4","Si un bolsón no se mide, dejar la celda VACÍA. No poner cero: el cero se lee como dato real."],
-    ["5","El cero solo se escribe cuando el bolsón quedó terminado."],
-    ["6","Alimento: MG = maíz grano, MS = maíz silo, GL = gluten. La celda tiene lista desplegable."],
-    ["7","Estado: C = cerrado, U = en uso (extractora, se vacía), A = en armado (embolsadora, se llena), T = terminado, X = ya no está."],
-    ["8","Materia seca: peso inicial y cada pesada con su minuto (MIN/G). Seguir hasta que dos pesadas seguidas den igual. Origen: B = frente de un bolsón en uso (aclarar cuál), C = celda, M = mixer. En la dieta, FALTÓ = el ingrediente que no tenía."],
-    ["9","Las celdas amarillas son las que hay que completar. Las blancas con fórmula se calculan solas."],
-    ["10","Al volver, subir este archivo en la app (pestaña Carga): pasa por la revisión y queda en la base."],["11","LECTURA: poner «dudosa» si un número quedó mal escrito o sobrescrito."],[""],
-    ["Emitida", dmy(hoy())],["Renglones", filas]];
-
-  return xlsx([
-    {nombre:"Recuento", filas:h0, anchos:[26,20,22,12]},
-    {nombre:"Mediciones", filas:h1, anchos:[6,14,13,10,13,11,36,10], congelar:true, listas:[
-      {rango:`C2:C${ult}`, opciones:sig},
-      {rango:`D2:D${ult}`, opciones:"A,B"},
-      {rango:`F2:F${ult}`, opciones:"C,U,A,T,X"},
-      {rango:`H2:H${ult}`, opciones:"ok,dudosa"}
-    ]},
-    {nombre:"Materia seca", filas:h2, anchos:[22,12,7,7,7,7,7,7,10,9,20,14,28], congelar:true, listas:[
-      {rango:`J2:J${ings.length+2}`, opciones:"B,C,M"}
-    ]},
-    {nombre:"Instructivo", filas:h3, anchos:[6,104]}
-  ]);
 }
 
 /* ── El otro export: los datos que YA están cargados en la app ─────── */
@@ -3890,18 +4173,12 @@ function cablear(){
     staging = stagingDeMano();
     if(!staging.filas.length && !staging.ms.length){ staging=null;
       abrirModal({titulo:"No hay nada para guardar", soloOk:true, ok:"Entendido", onOk:cerrarModal,
-        texto:"No escribiste metros ni cambiaste ningún estado. Los que quedan en blanco son s/d y no se guardan."}); return; }
+        texto:"No escribiste metros, notas ni pesadas. Los renglones en blanco no se midieron (s/d) y no se guardan."}); return; }
     procesarStaging(); vista="revision"; render();
   });
   on("btnPlanilla", imprimirPlanilla);
   on("btnPlanillaXls", ()=>bajarBlob(planillaXlsx(), "planilla_silobolsa_"+hoy()+".xlsx"));
-  document.querySelectorAll("input[data-m]").forEach(el=>{ el.oninput = ()=>{ cargaBuf[el.dataset.m] = el.value; guardarBorrador(); }; });
-  document.querySelectorAll("select[data-est]").forEach(el=>{ el.onchange = ()=>{ cargaBuf["est:"+el.dataset.est] = el.value; guardarBorrador(); }; });
-  document.querySelectorAll("[data-msk]").forEach(el=>{
-    const ev = el.tagName==="SELECT" ? "onchange" : "oninput";
-    el[ev] = ()=>{ const k="ms:"+el.dataset.msk; cargaBuf[k] = cargaBuf[k]||{}; cargaBuf[k][el.dataset.msc] = el.value; guardarBorrador(); };
-    if(el.tagName!=="SELECT") el.onchange = ()=>render();
-  });
+  cablearMano();
   const cf = document.getElementById("cFecha"), cq = document.getElementById("cQuien");
   if(cf) cf.onchange = ()=>{ cargaBuf.__fecha = cf.value; guardarBorrador(); };
   if(cq) cq.oninput = ()=>{ cargaBuf.__quien = cq.value; guardarBorrador(); };
@@ -4006,7 +4283,7 @@ function cablearRevision(){
         fp=document.getElementById("fPlanilla"), vm=document.getElementById("volverModo");
   if(op1) op1.onclick = ()=> fp.click();
   if(fp)  fp.onchange = e=>{ const fs=[...e.target.files]; e.target.value=""; if(fs.length) importarPlanilla(fs); };
-  if(op2) op2.onclick = ()=>{ cargaModo="mano"; render(); };
+  if(op2) op2.onclick = ()=>{ cargaModo="mano"; focoMano = true; render(); };
   if(vm)  vm.onclick  = ()=>{ cargaModo=null; render(); };
   if(!staging) return;
   document.querySelectorAll("[data-rev]").forEach(box=>{
@@ -4022,13 +4299,16 @@ function cablearRevision(){
         fila[k] = el.type==="checkbox" ? el.checked : el.value;
         if(k==="asignado"){ fila.tocado = true; fila.confirmado = !!el.value; }
         if(k==="confirmado") fila.tocado = true;      // confirmar es una decisión de Iñaki: no se recalcula encima
-        if(k==="aliTxt"||k==="etiqueta"||k==="metrosTxt"||k==="estadoTxt"){ if(!fila.tocado){ fila.asignado=null; } }
+        if(k==="aliTxt"||k==="etiqueta"||k==="metrosTxt"||k==="estadoTxt"||k==="nota"||k==="notaNo"){ if(!fila.tocado){ fila.asignado=null; } }
         procesarStaging(); render();
       };
     });
   });
   document.querySelectorAll("[data-ms] [data-mv]").forEach(el=>{
-    el.onchange = ()=>{ staging.ms[+el.closest("[data-ms]").dataset.ms].importar = el.checked; procesarStaging(); render(); };
+    el.onchange = ()=>{ const m = staging.ms[+el.closest("[data-ms]").dataset.ms];
+      if(el.dataset.mv==="origen"){ m.origen = el.value || null; m.elegido = true; m.origenPor = el.value ? "elegido en la revisión" : ""; }
+      else m.importar = el.checked;
+      procesarStaging(); render(); };
   });
   document.querySelectorAll("[data-ms] [data-falt]").forEach(el=>{
     el.onchange = ()=>{ const m = staging.ms[+el.closest("[data-ms]").dataset.ms]; const k = el.dataset.falt;

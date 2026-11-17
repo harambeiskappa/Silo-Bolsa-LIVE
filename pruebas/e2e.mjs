@@ -577,9 +577,13 @@ await paso('10', 'Cortar la red a mitad de una carga', async () => {
   await ir(admin, 'carga'); await admin.click('#opMano'); await espera(150);
   await admin.$eval('#cFecha', (e) => { e.value = '2026-11-18'; e.dispatchEvent(new Event('change')); });
   await admin.setOfflineMode(true);
-  await admin.type(`input[data-m="${ms1.id}"]`, '66,9');
+  // fase 5: la carga a mano es la lista numerada del papel; MS N° 1 → la revisión propone MS1
+  await admin.type('[data-mm="MS|1"]', '66,9');
   const borrador = await admin.evaluate(() => JSON.parse(localStorage.getItem('silobolsa_borrador_v4')));
-  await admin.click('#btnGuardar'); await espera(200);
+  await admin.$eval('#btnGuardar', (e) => e.click()); await espera(200);
+  const propuesto = await admin.evaluate(() => { const f = staging.filas[0]; return f && (bol(f.asignado) || {}).etiqueta; });
+  await admin.$eval('#revFaltNoMed', (e) => e.click()); await espera(100);
+  await admin.$eval('[data-rev] input[data-rv="confirmado"]', (e) => { if (!e.checked) e.click(); }); await espera(100);
   await admin.$eval('#revOk', (e) => e.click()); await espera(1500);
   const ind = await admin.$eval('#indGuardado', (e) => e.innerText);
   const enBase = await sql(`select count(*)::int n from mediciones where fecha='2026-11-18'`);
@@ -589,8 +593,8 @@ await paso('10', 'Cortar la red a mitad de una carga', async () => {
   const despues = await sql(`select m.metros_restantes::text, b.etiqueta from mediciones m join bolsones b on b.id=m.bolson_id where fecha='2026-11-18'`);
   const ind2 = await admin.$eval('#indGuardado', (e) => e.innerText);
   anotar('10', 'Lo tipeado queda como borrador, dice "sin guardar" y al volver la red se guarda',
-    borrador.cargaBuf[ms1.id] === '66,9' && /sin guardar en la base/i.test(ind) && enBase[0].n === 0 && enCola === 1 && despues.length === 1 && despues[0].metros_restantes === '66.9' && /guardado en la base/i.test(ind2),
-    { borrador_en_el_navegador: borrador.cargaBuf, indicador_sin_red: ind, en_la_base_sin_red: enBase[0].n, operaciones_en_cola: enCola, en_la_base_al_volver: despues, indicador_despues: ind2 });
+    borrador.cargaBuf['m:MS:1'] === '66,9' && propuesto === 'MS1' && despues[0] && despues[0].etiqueta === 'MS1' && /sin guardar en la base/i.test(ind) && enBase[0].n === 0 && enCola === 1 && despues.length === 1 && despues[0].metros_restantes === '66.9' && /guardado en la base/i.test(ind2),
+    { borrador_en_el_navegador: borrador.cargaBuf, propuesto_por_la_revision: propuesto, indicador_sin_red: ind, en_la_base_sin_red: enBase[0].n, operaciones_en_cola: enCola, en_la_base_al_volver: despues, indicador_despues: ind2 });
 });
 
 // ═══════════ 12 · latido ═══════════
@@ -705,9 +709,9 @@ await paso('14', 'Regresiones', async () => {
   await listo(admin);
   const p1 = await pos();
   const consec = (fl) => { const xs = p1.filter((x) => x.fila === fl).map((x) => x.p); return xs.every((x, i) => x === i + 1); };
-  const plan = await admin.evaluate(() => filasPlanilla().slice(0, 3).map((x) => x.id + ' ' + x.fila));
+  const plan = 'fase 5: la planilla sale en blanco y no lista bolsones (el orden lo pone el recorrido)';
   const carga = await admin.evaluate(() => recorrido().filter((b) => b.ubicacion.fila === 'B')[0].etiqueta);
-  anotar('F2.11', 'Mover el 3.º de la pasada A al 1.º de la B: posiciones consecutivas, sin repetidos; carga y planilla en el orden nuevo',
+  anotar('F2.11', 'Mover el 3.º de la pasada A al 1.º de la B: posiciones consecutivas, sin repetidos; el recorrido de Carga en el orden nuevo',
     consec('A') && consec('B') && p1.find((x) => x.etiqueta === terceroA.etiqueta).fila === 'B' && p1.find((x) => x.etiqueta === terceroA.etiqueta).p === 1 && carga === terceroA.etiqueta,
     { movido: terceroA.etiqueta, A: p1.filter((x) => x.fila === 'A').map((x) => x.p).join(','), B: p1.filter((x) => x.fila === 'B').map((x) => x.p).join(','), primera_de_B_en_carga: carga, planilla: plan });
   await admin.evaluate(() => deshacer()); await listo(admin);

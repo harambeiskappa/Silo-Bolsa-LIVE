@@ -68,13 +68,24 @@ Los permisos los aplica la base (RLS), no la pantalla.
 ## Pruebas
 
 Necesitan Node 20+, Python 3 con `openpyxl` y Chrome o Edge instalados. Leen los datos de la carpeta del proyecto
-(fuera del repo) y escriben sus resultados en `pruebas/salida/` (ignorada por git).
+(fuera del repo) y escriben sus resultados en `pruebas/salida/` (ignorada por git: trae datos reales).
 
 ```
 cd pruebas
 npm install
 node e2e.mjs "../../datos" "./salida"
+node capturas.mjs "../../datos" "../../diseno/v2" "./salida/capturas"
+node planillas.mjs "../../datos" "../../diseno/planillas" "./salida/planillas"
 ```
+
+`planillas.mjs` (fase 5) necesita además LibreOffice (`C:/Program Files/LibreOffice/program/soffice.exe`, o la ruta
+en la variable `SOFFICE`): vuelve a guardar la planilla de Excel como lo haría quien la abre, y calcula sus fórmulas.
+
+## Planillas de campo
+
+En **Carga**: «Imprimir planilla (una hoja A4)» y «Bajar planilla en Excel». Las dos piden lo mismo: por alimento,
+N°, metros que quedan y una nota; y la humedad del silo y de la dieta. Salen en blanco. La app lee la planilla nueva,
+las viejas de 4 hojas y los CSV; la revisión dice qué formato detectó.
 
 Para mirar la app contra el banco local a mano: `node servidor_prueba.mjs 8787` y abrir
 `http://localhost:8787/?api=http://localhost:8787` (usuarios de prueba impresos en la consola).
